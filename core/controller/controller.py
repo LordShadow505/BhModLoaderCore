@@ -71,6 +71,9 @@ class Controller(BaseController):
     def reloadMods(self):
         self.sendEnv(Environment.ReloadMods)
 
+    def reloadMod(self, hash):
+        self.sendEnv(Environment.ReloadMod, hash)
+
     def reloadModsSources(self):
         self.sendEnv(Environment.ReloadModsSources)
 
@@ -133,3 +136,6 @@ class Controller(BaseController):
 
     def deleteModSources(self, hash):
         self.sendEnv(Environment.DeleteModSources, hash)
+
+    def setDefaultMetadata(self, author, gameVersion, modVersion):
+        self.sendEnv(Environment.SetDefaultMetadata, author, gameVersion, modVersion)

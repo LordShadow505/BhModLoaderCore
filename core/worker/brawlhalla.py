@@ -23,18 +23,24 @@ if sys.platform in ["win32", "win64"]:
     brawlhallaFolders = []
     steamHomePath = ""
 
-    for reg in ["SOFTWARE\\WOW6432Node\\Valve\\Steam", "SOFTWARE\\Valve\\Steam"]:
-        try:
-            steamHomePath = winreg.QueryValueEx(
-                winreg.OpenKey(
-                    winreg.HKEY_LOCAL_MACHINE,
-                    reg
-                ),
-                "InstallPath"
-            )[0]
-            break
-        except FileNotFoundError:
-            pass
+    # Try custom path first
+    if ModloaderCoreConfig.customBrawlhallaPath:
+        if os.path.exists(ModloaderCoreConfig.customBrawlhallaPath):
+            BRAWLHALLA_PATH = ModloaderCoreConfig.customBrawlhallaPath
+
+    if BRAWLHALLA_PATH is None:
+        for reg in ["SOFTWARE\\WOW6432Node\\Valve\\Steam", "SOFTWARE\\Valve\\Steam"]:
+            try:
+                steamHomePath = winreg.QueryValueEx(
+                    winreg.OpenKey(
+                        winreg.HKEY_LOCAL_MACHINE,
+                        reg
+                    ),
+                    "InstallPath"
+                )[0]
+                break
+            except FileNotFoundError:
+                pass
 
     if steamHomePath:
         with open(os.path.join(os.path.join(steamHomePath, "steamapps"), "libraryfolders.vdf")) as vdf:
@@ -131,37 +137,61 @@ if BRAWLHALLA_PATH is not None:
             BRAWLHALLA_VERSION = ModloaderCoreConfig.brawlhallaVersion
 
         else:
-            brawlhallaAir = Swf(_bhAir)
 
-            for AS3Pack in brawlhallaAir.AS3Packs:
-                methodInfos = ArrayList()
-                AS3Pack.getMethodInfos(methodInfos)
+            try:
+                with open(_bhAir, "rb") as _raw:
+                    _raw_bytes = _raw.read()
+                _version_matches = re.findall(rb'(\d\.\d\d(?:\.\d)?)', _raw_bytes)
 
-                abc = AS3Pack.abc
-                for methodInfo in methodInfos:
-                    bodyIndex = abc.findBodyIndex(methodInfo.getMethodIndex())
+                from collections import Counter
+                _counts = Counter(
+                    m.decode("utf-8") for m in _version_matches
+                    if len(m) in (4, 6)  # "X.XX" or "X.XX.X"
+                )
+                if _counts:
+                    BRAWLHALLA_VERSION = _counts.most_common(1)[0][0]
+                del _raw_bytes, _version_matches, _counts
+            except Exception:
+                pass
 
-                    if bodyIndex != -1:
-                        body = abc.bodies.get(bodyIndex)
-                        writer = HighlightedTextWriter(Configuration.getCodeFormatting(), True)
-                        abc.bodies.get(bodyIndex).getCode().toASMSource(abc, abc.constants,
-                                                                        abc.method_info.get(body.method_info),
-                                                                        body,
-                                                                        ScriptExportMode.PCODE,
-                                                                        writer)
-                        search = re.findall(r'pushstring "(\d\.\d\d|\d\.\d\d.\d)"', str(writer.toString()))
+            # ── Slow path: full FFDec decompile (fallback) ───────────────────
+            if BRAWLHALLA_VERSION is None:
+                brawlhallaAir = Swf(_bhAir)
 
-                        if search:
-                            BRAWLHALLA_VERSION = search[0]
-                            break
+                for AS3Pack in brawlhallaAir.AS3Packs:
+                    methodInfos = ArrayList()
+                    AS3Pack.getMethodInfos(methodInfos)
 
-                if BRAWLHALLA_VERSION is not None:
-                    ModloaderCoreConfig.brawlhallaVersion = BRAWLHALLA_VERSION
-                    ModloaderCoreConfig.brawlhallaAirHash = brawlhallaAirHash
-                    ModloaderCoreConfig.save()
-                    break
+                    abc = AS3Pack.abc
+                    for methodInfo in methodInfos:
+                        bodyIndex = abc.findBodyIndex(methodInfo.getMethodIndex())
 
-            brawlhallaAir.close()
-            del brawlhallaAir
+                        if bodyIndex != -1:
+                            body = abc.bodies.get(bodyIndex)
+                            writer = HighlightedTextWriter(Configuration.getCodeFormatting(), True)
+                            abc.bodies.get(bodyIndex).getCode().toASMSource(abc, abc.constants,
+                                                                            abc.method_info.get(body.method_info),
+                                                                            body,
+                                                                            ScriptExportMode.PCODE,
+                                                                            writer)
+                            search = re.findall(r'pushstring "(\d\.\d\d|\d\.\d\d.\d)"', str(writer.toString()))
+
+                            if search:
+                                BRAWLHALLA_VERSION = search[0]
+                                break
+
+                    if BRAWLHALLA_VERSION is not None:
+                        ModloaderCoreConfig.brawlhallaVersion = BRAWLHALLA_VERSION
+                        ModloaderCoreConfig.brawlhallaAirHash = brawlhallaAirHash
+                        ModloaderCoreConfig.save()
+                        break
+
+                brawlhallaAir.close()
+                del brawlhallaAir
+
+            if BRAWLHALLA_VERSION is not None:
+                ModloaderCoreConfig.brawlhallaVersion = BRAWLHALLA_VERSION
+                ModloaderCoreConfig.brawlhallaAirHash = brawlhallaAirHash
+                ModloaderCoreConfig.save()
 
     del _bhAir

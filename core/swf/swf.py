@@ -319,6 +319,8 @@ class Swf:
 
     def open(self):
         if self._swf is None:
+            if not os.path.exists(self.swfPath) or os.path.getsize(self.swfPath) < 8:
+                raise Exception(f"Corrupted or empty SWF file: {self.swfPath}")
             fileStream = FileInputStream(self.swfPath)
             self._swf = SWF(BufferedInputStream(fileStream), True)
             fileStream.close()

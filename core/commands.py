@@ -5,6 +5,7 @@ class Environment(Enum):
     SetModsPath = auto()
     SetModsSourcesPath = auto()
     ReloadMods = auto()
+    ReloadMod = auto()
     ReloadModsSources = auto()
     GetModsData = auto()
     GetModsSourcesData = auto()
@@ -29,5 +30,6 @@ class Environment(Enum):
     SaveModSource = auto()
     CompileModSources = auto()
     DeleteModSources = auto()
+    SetDefaultMetadata = auto()
 
     Notification = auto()

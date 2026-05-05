@@ -33,17 +33,20 @@ class ModLoaderClass:
 
     def getModsData(self):
         return [{**mod.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"]),
-                 "previewsPaths": mod.getPreviewsPaths(), "currentGameVersion": self.config.brawlhallaVersion}
+                 "previewsPaths": mod.getPreviewsPaths(), "currentGameVersion": self.config.brawlhallaVersion,
+                 "date": mod.date}
                 for mod in self.modsClasses]
 
     def getModsSourcesData(self):
         return [{**modSources.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"]),
                  "previewsPaths": modSources.getPreviewsPaths(), "currentGameVersion": self.config.brawlhallaVersion,
-                 "modSourcesPath": modSources.modSourcesPath}
+                 "modSourcesPath": modSources.modSourcesPath, "date": modSources.date}
                 for modSources in self.modsSources]
 
     def loadMods(self):
         modsHashes = []
+        cacheHashes = ModsHashSumCache(self.modsCachePath)
+
         if MODS_PATH:
             modsPath = MODS_PATH[0]
             CheckExists(modsPath, True)
@@ -51,8 +54,9 @@ class ModLoaderClass:
             for modFile in os.listdir(modsPath):
                 modPath = os.path.join(modsPath, modFile)
                 if modFile.endswith(f".{MOD_FILE_FORMAT}") and os.path.isfile(modPath):
+                    print(f"[DL DEBUG] Loading mod file: {modFile}")
                     try:
-                        modClass = ModClass(modPath=modPath, modsCachePath=self.modsCachePath)
+                        modClass = ModClass(modPath=modPath, modsCachePath=self.modsCachePath, sharedHashCache=cacheHashes)
                         # Not load duplicate
                         if modClass.hash not in modsHashes:
                             modsHashes.append(modClass.hash)
@@ -60,11 +64,10 @@ class ModLoaderClass:
                     except:
                         pass
 
-        cacheHashes = ModsHashSumCache(self.modsCachePath)
         for modHash in cacheHashes.hashes.values():
             if modHash not in modsHashes:
                 try:
-                    modClass = ModClass(modsCachePath=self.modsCachePath, modHash=modHash)
+                    modClass = ModClass(modsCachePath=self.modsCachePath, modHash=modHash, sharedHashCache=cacheHashes)
                     self.modsClasses.append(modClass)
                 except:
                     pass
@@ -72,6 +75,22 @@ class ModLoaderClass:
     def reloadMods(self):
         self.modsClasses = []
         self.loadMods()
+
+    def reloadMod(self, modPath: str):
+        # 1. Remove if already exists in self.modsClasses
+        for m in self.modsClasses:
+            if m.modPath == modPath:
+                self.modsClasses.remove(m)
+                break
+
+        # 2. Load it
+        if os.path.exists(modPath):
+            from .mod import ModClass
+            modClass = ModClass(modPath=modPath, modsCachePath=self.modsCachePath, sharedHashCache=self.modsHashSumCache)
+            if modClass.modFileExist:
+                self.modsClasses.append(modClass)
+                return modClass
+        return None
 
     def loadModsSources(self):
         modsSourcesHashes = []

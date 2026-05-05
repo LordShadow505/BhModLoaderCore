@@ -2,6 +2,8 @@ import os
 import re
 import shutil
 import threading
+import time
+import traceback
 from typing import List, Dict, Tuple, Union
 
 from .vartypes import ModDataSwfsTyped
@@ -43,7 +45,7 @@ from ..notifications import NotificationType
 __all__ = ["BaseModClass", "ModSource", "ModClass"]
 
 
-LOCK = threading.Lock()
+LOCK = threading.RLock()
 
 
 class BaseModClass(DataClass):
@@ -54,46 +56,46 @@ class BaseModClass(DataClass):
     formatType: str = METADATA_FORMAT_MOD
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "gameVersion")
-    gameVersion: str
+    gameVersion: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "name")
-    name: str
+    name: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "author")
-    author: str
+    author: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "version")
-    version: str
+    version: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "description")
-    description: str
+    description: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "tags")
-    tags: List[str]
+    tags: List[str] = []
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "previewsIds")
-    previewsIds: Dict[int, str]
+    previewsIds: Dict[int, str] = {}
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "hash")
-    hash: str
+    hash: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "swfs")
-    swfs: Dict[str, ModDataSwfsTyped]
+    swfs: Dict[str, ModDataSwfsTyped] = {}
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "files")
-    files: Dict[int, str]
+    files: Dict[int, str] = {}
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 2, "authorId")
-    authorId: int
+    authorId: int = 0
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 2, "modId")
-    modId: int
+    modId: int = 0
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 2, "platform")
-    platform: str
+    platform: str = ""
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 2, "modUrl")
-    modUrl: str
+    modUrl: str = ""
 
     def loadModData(self):
         pass
@@ -122,11 +124,19 @@ class BaseModClass(DataClass):
     def getPreviewsContent(self) -> List[Tuple[bytes, str]]:
         pass
 
+    @property
+    def date(self) -> float:
+        return 0.0
+
 
 class ModSource(BaseModClass):
     regexSpriteFile = re.compile(r"DefineSprite_(\d+)_?(.+|)?")
     regexSoundFile = re.compile(r"\d+_([^.]+)")
     regexAsFile = re.compile(r"([^.]+)\.as")
+
+    DEFAULT_AUTHOR = ""
+    DEFAULT_GAME_VERSION = "All"
+    DEFAULT_VERSION = "1.0"
 
     def __init__(self, modSourcesPath: str):
         SendNotification(NotificationType.LoadingModSource, modSourcesPath)
@@ -147,6 +157,12 @@ class ModSource(BaseModClass):
 
         if not loaded:
             #print(f"New mod source '{self.folderName}' detected")
+            if not self.author:
+                self.author = self.DEFAULT_AUTHOR
+            if not self.gameVersion:
+                self.gameVersion = self.DEFAULT_GAME_VERSION
+            if not self.version:
+                self.version = self.DEFAULT_VERSION
             self.saveModData()
 
     def saveModData(self):
@@ -204,6 +220,12 @@ class ModSource(BaseModClass):
 
         return previewsPaths
 
+    @property
+    def date(self) -> float:
+        if os.path.exists(self.modSourcesPath):
+            return os.path.getmtime(self.modSourcesPath)
+        return 0.0
+
     def getPreviewsContent(self) -> List[Tuple[bytes, str]]:
         previews = []
 
@@ -223,7 +245,14 @@ class ModSource(BaseModClass):
         SendNotification(NotificationType.CompileElementsCount, self.hash, self.getElementsCount())
 
         if os.path.exists(self.modPath):
-            os.remove(self.modPath)
+            import time
+            for i in range(5):
+                try:
+                    os.remove(self.modPath)
+                    break
+                except PermissionError:
+                    time.sleep(0.5)
+                    if i == 4: raise
 
         modSwf = Swf(self.modPath)
         self.swfs = {}
@@ -475,17 +504,19 @@ class ModCache(BaseModClass):
 
 
 class ModClass(ModCache):
-    def __init__(self, modsCachePath: str, modPath: str = None, modHash: str = None):
+    def __init__(self, modsCachePath: str, modPath: str = None, modHash: str = None, sharedHashCache: ModsHashSumCache = None):
         self.modPath = modPath
-        self.modsHashSumCache = ModsHashSumCache(modsCachePath)
-
-        SendNotification(NotificationType.LoadingMod, modPath)
+        if sharedHashCache is not None:
+            self.modsHashSumCache = sharedHashCache
+        else:
+            self.modsHashSumCache = ModsHashSumCache(modsCachePath)
 
         if self.modPath is not None and os.path.exists(self.modPath):
             self.modFileExist = True
 
             self.modSwf = Swf(self.modPath, autoload=False)
-            modHashSum = HashFile(self.modPath)
+            fileStat = os.stat(self.modPath)
+            modHashSum = f"{fileStat.st_size}_{fileStat.st_mtime}"
 
             _cache = False
 
@@ -499,6 +530,8 @@ class ModClass(ModCache):
                 _cache = True
 
             if _cache:
+                print(f"[DL DEBUG] Initializing ModClass for: {modPath}")
+                SendNotification(NotificationType.LoadingMod, modPath)
                 SendNotification(NotificationType.LoadingModData, modPath)
                 self.loadModData()
 
@@ -598,6 +631,12 @@ class ModClass(ModCache):
 
         return previewsPaths
 
+    @property
+    def date(self) -> float:
+        if self.modPath and os.path.exists(self.modPath):
+            return os.path.getmtime(self.modPath)
+        return 0.0
+
     def getPreviewsContent(self) -> List[Tuple[bytes, str]]:
         previewsContent = []
 
@@ -614,180 +653,189 @@ class ModClass(ModCache):
 
     def getModConflict(self) -> List[str]:
         LOCK.acquire(True)
+        try:
+            SendNotification(NotificationType.ModElementsCount, self.hash, len(self.swfs))
 
-        SendNotification(NotificationType.ModElementsCount, self.hash, len(self.swfs))
+            temp_gameFiles = []
+            conflictMods = set(GameFiles.getModConflict(list(self.files.values()), self.hash))
+            for swfName, swfMap in self.swfs.items():
+                gameFile = GetGameFileClass(swfName)
+                if gameFile:
+                    gameFile.open()
 
-        temp_gameFiles = []
-        conflictMods = set(GameFiles.getModConflict(list(self.files.values()), self.hash))
-        for swfName, swfMap in self.swfs.items():
-            gameFile = GetGameFileClass(swfName)
-            gameFile.open()
+                    SendNotification(NotificationType.ModConflictSearchInSwf, self.hash, swfName)
 
-            SendNotification(NotificationType.ModConflictSearchInSwf, self.hash, swfName)
+                    temp_gameFiles.append(gameFile)
 
-            temp_gameFiles.append(gameFile)
+                for category, anchors in swfMap.items():
+                    if category in ("sounds", "sprites", "scripts"):
+                        conflictAnchors = set(list(anchors)) & set(list(gameFile.modifiedAnchorsMap))
 
-            for category, anchors in swfMap.items():
-                if category in ("sounds", "sprites", "scripts"):
-                    conflictAnchors = set(list(anchors)) & set(list(gameFile.modifiedAnchorsMap))
+                        for anchor in conflictAnchors:
+                            if modHash := gameFile.modifiedAnchorsMap.get(anchor, None):
+                                conflictMods.add(modHash)
 
-                    for anchor in conflictAnchors:
-                        if modHash := gameFile.modifiedAnchorsMap.get(anchor, None):
-                            conflictMods.add(modHash)
+                        del conflictAnchors
 
-                    del conflictAnchors
+                gameFile.close()
 
-            gameFile.close()
+            if conflictMods:
+                pass
+                # print("Mod conflict:", list(conflictMods))
+                SendNotification(NotificationType.ModConflict, self.hash, list(conflictMods))
+            else:
+                del temp_gameFiles
+                SendNotification(NotificationType.ModConflictNotFound, self.hash)
+                #del conflictMods
 
-        if conflictMods:
-            pass
-            # print("Mod conflict:", list(conflictMods))
-            SendNotification(NotificationType.ModConflict, self.hash, list(conflictMods))
-        else:
-            del temp_gameFiles
-            SendNotification(NotificationType.ModConflictNotFound, self.hash)
-            #del conflictMods
-
-        LOCK.release()
-
-        return list(conflictMods)
+            return list(conflictMods)
+        finally:
+            LOCK.release()
 
     def install(self, forceInstallation=False):
+        print(f"[DL DEBUG] Starting installation of mod: {self.name} ({self.hash})")
         LOCK.acquire(True)
+        try:
+            SendNotification(NotificationType.ModElementsCount, self.hash, self.getElementsCount())
 
-        SendNotification(NotificationType.ModElementsCount, self.hash, self.getElementsCount())
+            self.open()
 
-        self.open()
+            # Check conflict mods
+            if not forceInstallation:
+                conflictMods = self.getModConflict()
+                if conflictMods:
+                    SendNotification(NotificationType.ModConflict, self.hash, list(conflictMods))
+                    return conflictMods
 
-        # Check conflict mods
-        if not forceInstallation:
-            conflictMods = self.getModConflict()
-            if conflictMods:
-                SendNotification(NotificationType.ModConflict, self.hash, list(conflictMods))
-                return conflictMods
-
-        else:
-            pass
-            #SendNotification(NotificationType.ForceInstallation, self.hash)
-
-        for elId, fileName in self.files.items():
-            fileElement = self.modSwf.getElementById(elId)
-            if fileElement:
-                fileElement = fileElement[0]
             else:
-                #print(f"Error: Not found element '{[elId]}'", fileElement)
-                SendNotification(NotificationType.InstallingModNotFoundFileElement, self.hash, elId)
-                continue
+                pass
+                #SendNotification(NotificationType.ForceInstallation, self.hash)
 
-            GameFiles.installFile(fileName, self.modSwf.exportBinaryData(fileElement), self.hash)
+            for elId, fileName in self.files.items():
+                fileElement = self.modSwf.getElementById(elId)
+                if fileElement:
+                    fileElement = fileElement[0]
+                else:
+                    #print(f"Error: Not found element '{[elId]}'", fileElement)
+                    SendNotification(NotificationType.InstallingModNotFoundFileElement, self.hash, elId)
+                    continue
 
-        for swfName, swfMap in self.swfs.items():
-            gameFile = GetGameFileClass(swfName)
-            gameFile.open()
+                GameFiles.installFile(fileName, self.modSwf.exportBinaryData(fileElement), self.hash)
 
-            if gameFile is None:
-                #print(f"Error: Not found swf '{swfName}'!")
-                SendNotification(NotificationType.InstallingModNotFoundGameSwf, self.hash, swfName)
-                continue
+            for swfName, swfMap in self.swfs.items():
+                print(f"[DL DEBUG] Installing to SWF: {swfName}")
+                gameFile = GetGameFileClass(swfName)
+                gameFile.open()
 
-            if self.hash in gameFile.installed:
-                #print(f"Mod '{self.name}' in '{swfName}' is already installed")
-                SendNotification(NotificationType.InstallingModInFileAlreadyInstalled, self.hash, swfName)
-                continue
-            else:
-                #print(f"Installing '{self.name}' in '{swfName}'")
-                SendNotification(NotificationType.InstallingModSwf, self.hash, swfName)
+                if gameFile is None:
+                    #print(f"Error: Not found swf '{swfName}'!")
+                    SendNotification(NotificationType.InstallingModNotFoundGameSwf, self.hash, swfName)
+                    continue
 
-            for category, elements in swfMap.items():
-                if category == "scripts":
-                    for scriptAnchor, content in elements.items():
-                        SendNotification(NotificationType.InstallingModSwfScript, self.hash, scriptAnchor)
+                if self.hash in gameFile.installed:
+                    #print(f"Mod '{self.name}' in '{swfName}' is already installed")
+                    SendNotification(NotificationType.InstallingModInFileAlreadyInstalled, self.hash, swfName)
+                    continue
+                else:
+                    #print(f"Installing '{self.name}' in '{swfName}'")
+                    SendNotification(NotificationType.InstallingModSwf, self.hash, swfName)
 
-                        success = gameFile.importScript(content, scriptAnchor, self.hash)
+                for category, elements in swfMap.items():
+                    if category == "scripts":
+                        for scriptAnchor, content in elements.items():
+                            SendNotification(NotificationType.InstallingModSwfScript, self.hash, scriptAnchor)
 
-                        if not success:
-                            SendNotification(NotificationType.InstallingModSwfScriptError, self.hash, scriptAnchor)
+                            success = gameFile.importScript(content, scriptAnchor, self.hash)
 
-                elif category == "sounds":
-                    for soundAnchor in elements:
-                        #print("Install Sound", soundAnchor)
-                        SendNotification(NotificationType.InstallingModSwfSound, self.hash, soundAnchor)
+                            if not success:
+                                SendNotification(NotificationType.InstallingModSwfScriptError, self.hash, scriptAnchor)
 
-                        soundId = self.modSwf.symbolClass.getTagByName(soundAnchor)
-                        if soundId is None:
-                            #print(f"Error: Sound {soundAnchor} does not exist")
-                            SendNotification(NotificationType.InstallingModSwfSoundSymbolclassNotExist,
-                                             self.hash, soundAnchor, swfName)
-                            continue
+                    elif category == "sounds":
+                        for soundAnchor in elements:
+                            #print("Install Sound", soundAnchor)
+                            SendNotification(NotificationType.InstallingModSwfSound, self.hash, soundAnchor)
 
-                        sound = self.modSwf.getElementById(soundId, DefineSoundTag)
-                        if sound:
-                            sound = sound[0]
-                        else:
-                            #print(f"Error: Sound {soundId} {soundAnchor} does not exist")
-                            SendNotification(NotificationType.InstallingModSoundNotExist,
-                                             self.hash, soundAnchor, soundId, swfName)
-                            continue
+                            soundId = self.modSwf.symbolClass.getTagByName(soundAnchor)
+                            if soundId is None:
+                                #print(f"Error: Sound {soundAnchor} does not exist")
+                                SendNotification(NotificationType.InstallingModSwfSoundSymbolclassNotExist,
+                                                 self.hash, soundAnchor, swfName)
+                                continue
 
-                        gameFile.importSound(sound, soundAnchor, self.hash)
-                elif category == "sprites":
-                    elementsMap = {}
-                    for spriteAnchor in elements:
-                        #print("Install Sprite", spriteAnchor)
-                        SendNotification(NotificationType.InstallingModSwfSprite, self.hash, spriteAnchor)
+                            sound = self.modSwf.getElementById(soundId, DefineSoundTag)
+                            if sound:
+                                sound = sound[0]
+                            else:
+                                #print(f"Error: Sound {soundId} {soundAnchor} does not exist")
+                                SendNotification(NotificationType.InstallingModSoundNotExist,
+                                                 self.hash, soundAnchor, soundId, swfName)
+                                continue
 
-                        spriteId = self.modSwf.symbolClass.getTagByName(spriteAnchor)
-                        if spriteId is None:
-                            #print(f"Error: Sprite {spriteAnchor} does not exist")
-                            SendNotification(NotificationType.InstallingModSwfSpriteSymbolclassNotExist,
-                                             self.hash, spriteAnchor, swfName)
-                            continue
+                            gameFile.importSound(sound, soundAnchor, self.hash)
+                    elif category == "sprites":
+                        elementsMap = {}
+                        for spriteAnchor in elements:
+                            #print("Install Sprite", spriteAnchor)
+                            SendNotification(NotificationType.InstallingModSwfSprite, self.hash, spriteAnchor)
 
-                        sprite = self.modSwf.getElementById(spriteId, DefineSpriteTag)
-                        if sprite:
-                            sprite = sprite[0]
-                        else:
-                            #print(f"Error: Sprite {spriteId} {spriteAnchor} does not exist")
-                            SendNotification(NotificationType.InstallingModSpriteNotExist,
-                                             self.hash, spriteAnchor, spriteId, swfName)
-                            continue
+                            spriteId = self.modSwf.symbolClass.getTagByName(spriteAnchor)
+                            if spriteId is None:
+                                #print(f"Error: Sprite {spriteAnchor} does not exist")
+                                SendNotification(NotificationType.InstallingModSwfSpriteSymbolclassNotExist,
+                                                 self.hash, spriteAnchor, swfName)
+                                continue
 
-                        gameFile.importSprite(sprite, spriteAnchor, self.hash, elementsMap)
+                            sprite = self.modSwf.getElementById(spriteId, DefineSpriteTag)
+                            if sprite:
+                                sprite = sprite[0]
+                            else:
+                                #print(f"Error: Sprite {spriteId} {spriteAnchor} does not exist")
+                                SendNotification(NotificationType.InstallingModSpriteNotExist,
+                                                 self.hash, spriteAnchor, spriteId, swfName)
+                                continue
 
-            gameFile.addInstalledMod(self.hash)
-            #print(gameFile.getJson(formatJson=True))
-            gameFile.save()
-            gameFile.close()
+                            gameFile.importSprite(sprite, spriteAnchor, self.hash, elementsMap)
 
-        SendNotification(NotificationType.InstallingModFinished, self.hash)
+                gameFile.addInstalledMod(self.hash)
+                #print(gameFile.getJson(formatJson=True))
+                gameFile.save()
+                gameFile.close()
 
-        self.installed = True
-        self.saveCache()
+            SendNotification(NotificationType.InstallingModFinished, self.hash)
+            print(f"[DL DEBUG] Installation of mod {self.name} FINISHED")
 
-        LOCK.release()
+            self.installed = True
+            self.saveCache()
+            print(f"[DL DEBUG] Mod Cache SAVED for {self.name}")
+        except Exception as e:
+            SendNotification(NotificationType.FatalError, f"Failed to install mod: {str(e)}\n\n{traceback.format_exc()}")
+        finally:
+            LOCK.release()
 
     def uninstall(self):
         LOCK.acquire(True)
+        try:
+            SendNotification(NotificationType.ModElementsCount, self.hash, self.getElementsCount())
 
-        SendNotification(NotificationType.ModElementsCount, self.hash, self.getElementsCount())
+            GameFiles.uninstallMod(self.hash)
 
-        GameFiles.uninstallMod(self.hash)
+            for swfName in self.swfs:
+                gameFile = GetGameFileClass(swfName)
+                gameFile.open()
 
-        for swfName in self.swfs:
-            gameFile = GetGameFileClass(swfName)
-            gameFile.open()
+                gameFile.uninstallMod(self.hash)
 
-            gameFile.uninstallMod(self.hash)
+                gameFile.save()
+                gameFile.close()
 
-            gameFile.save()
-            gameFile.close()
+            SendNotification(NotificationType.UninstallingModFinished, self.hash)
 
-        SendNotification(NotificationType.UninstallingModFinished, self.hash)
-
-        self.installed = False
-        self.saveCache()
-
-        LOCK.release()
+            self.installed = False
+            self.saveCache()
+        except Exception as e:
+            SendNotification(NotificationType.FatalError, f"Failed to uninstall mod: {str(e)}\n\n{traceback.format_exc()}")
+        finally:
+            LOCK.release()
 
     def reinstall(self):
         self.uninstall()

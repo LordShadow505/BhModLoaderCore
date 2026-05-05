@@ -54,12 +54,21 @@ class GameSwf(GameSwfData):
         self.gameSwf = Swf(gameFilePath, autoload=False)
 
     def open(self):
+        print(f"[DL DEBUG] GameSwf.open() for: {self.swfName}")
         self.gameSwf.open()
-        self.loadFileData()
+        self._loadFileDataInternal()
+
+    def _loadFileDataInternal(self):
+        if self.gameSwf.metaData is None:
+            self.gameSwf.addMetadata()
+        else:
+            self.loadFromJson(self.gameSwf.metaData.get())
 
     def save(self):
+        print(f"[DL DEBUG] GameSwf.save() for: {self.swfName}")
         self.gameSwf.metaData.set(self.getDict())
         self.gameSwf.save()
+        print(f"[DL DEBUG] GameSwf.save() FINISHED for: {self.swfName}")
 
     def close(self):
         self.gameSwf.close()
@@ -67,15 +76,12 @@ class GameSwf(GameSwfData):
     def loadFileData(self):
         fileOpen = self.gameSwf.isOpen()
         if not fileOpen:
-            self.open()
-
-        if self.gameSwf.metaData is None:
-            self.gameSwf.addMetadata()
-        else:
-            self.loadFromJson(self.gameSwf.metaData.get())
+            self.gameSwf.open()
+        
+        self._loadFileDataInternal()
 
         if not fileOpen:
-            self.close()
+            self.gameSwf.close()
 
     def saveFileData(self):
         self.saveJsonFile()
@@ -112,7 +118,12 @@ class GameSwf(GameSwfData):
         if origSoundId is None:
             print(f"Error: Element '{soundAnchor}' not found!")
             return
-        origSound = self.gameSwf.getElementById(origSoundId, DefineSoundTag)[0]
+        
+        origSounds = self.gameSwf.getElementById(origSoundId, DefineSoundTag)
+        if not origSounds:
+            print(f"Error: Sound element '{soundAnchor}' not found in SWF!")
+            return
+        origSound = origSounds[0]
 
         # If orig not cloned
         if soundAnchor not in self.anchors:
@@ -146,7 +157,12 @@ class GameSwf(GameSwfData):
         if origSpriteId is None:
             print(f"Error: Element '{spriteAnchor}' not found!")
             return
-        origSprite = self.gameSwf.getElementById(origSpriteId, DefineSpriteTag)[0]
+        
+        origSprites = self.gameSwf.getElementById(origSpriteId, DefineSpriteTag)
+        if not origSprites:
+            print(f"Error: Sprite element '{spriteAnchor}' not found in SWF!")
+            return
+        origSprite = origSprites[0]
 
         # Remove modified sprite
         if spriteAnchor in self.anchors:

@@ -3,6 +3,7 @@ import threading
 from .basedispatch import BaseDispatch, Index
 from .variables import *
 from .modloader import ModLoader
+from .mod import ModSource
 from .basemod import InstallBaseMod
 
 from ..commands import Environment
@@ -23,6 +24,24 @@ class Dispatch(BaseDispatch):
     def reloadMods(self):
         ModLoader.reloadMods()
         return True
+
+    @Index(Environment.ReloadMod)
+    def reloadMod(self, hash):
+        # In Creator, we usually have the source hash.
+        modSource = ModLoader.getModSourcesByHash(hash)
+        if modSource:
+            from .variables import MOD_FILE_FORMAT
+            modPath = modSource.modSourcesPath + f".{MOD_FILE_FORMAT}"
+            ModLoader.reloadMod(modPath)
+            return True, hash
+        
+        # In Loader, we might have the mod hash.
+        mod = ModLoader.getModByHash(hash)
+        if mod:
+            ModLoader.reloadMod(mod.modPath)
+            return True, hash
+            
+        return False, None
 
     @Index(Environment.ReloadModsSources)
     def reloadModsSources(self):
@@ -54,31 +73,43 @@ class Dispatch(BaseDispatch):
 
     @Index(Environment.InstallMod)
     def installMod(self, hash):
-        mod = ModLoader.getModByHash(hash)
+        mod = ModLoader.getModByHash(hash) or ModLoader.getModSourcesByHash(hash)
         if mod is not None:
-            threading.Thread(target=mod.install, kwargs={"forceInstallation": True}).start()
-            #mod.install()
-            return True, hash
+            if hasattr(mod, "install"):
+                threading.Thread(target=mod.install, kwargs={"forceInstallation": True}).start()
+                return True, hash
+            else:
+                from ..notifications import SendNotification, NotificationType
+                SendNotification(NotificationType.FatalError, f"Mod with hash {hash} does not have an installation method. It might need to be built first.")
+                return False, None
 
         return False, None
 
     @Index(Environment.ForceInstallMod)
     def forceInstallMod(self, hash):
-        mod = ModLoader.getModByHash(hash)
+        mod = ModLoader.getModByHash(hash) or ModLoader.getModSourcesByHash(hash)
         if mod is not None:
-            threading.Thread(target=mod.install, kwargs={"forceInstallation": True}).start()
-            # mod.install()
-            return True, hash
+            if hasattr(mod, "install"):
+                threading.Thread(target=mod.install, kwargs={"forceInstallation": True}).start()
+                return True, hash
+            else:
+                from ..notifications import SendNotification, NotificationType
+                SendNotification(NotificationType.FatalError, f"Mod with hash {hash} does not have an installation method.")
+                return False, None
 
         return False, None
 
     @Index(Environment.UninstallMod)
     def uninstallMod(self, hash):
-        mod = ModLoader.getModByHash(hash)
+        mod = ModLoader.getModByHash(hash) or ModLoader.getModSourcesByHash(hash)
         if mod is not None:
-            threading.Thread(target=mod.uninstall).start()
-            #mod.uninstall()
-            return True, hash
+            if hasattr(mod, "uninstall"):
+                threading.Thread(target=mod.uninstall).start()
+                return True, hash
+            else:
+                from ..notifications import SendNotification, NotificationType
+                SendNotification(NotificationType.FatalError, f"Mod with hash {hash} does not have an uninstallation method.")
+                return False, None
 
         return False, None
 
@@ -98,7 +129,7 @@ class Dispatch(BaseDispatch):
     def reinstallMod(self, hash):
         mod = ModLoader.getModByHash(hash)
         if mod is not None:
-            mod.reinstall()
+            threading.Thread(target=mod.reinstall).start()
             return True, hash
 
         return False
@@ -205,3 +236,10 @@ class Dispatch(BaseDispatch):
             return True, hash
 
         return False, None
+
+    @Index(Environment.SetDefaultMetadata)
+    def setDefaultMetadata(self, author, gameVersion, modVersion):
+        ModSource.DEFAULT_AUTHOR = author
+        ModSource.DEFAULT_GAME_VERSION = gameVersion
+        ModSource.DEFAULT_VERSION = modVersion
+        return True

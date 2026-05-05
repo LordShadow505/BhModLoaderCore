@@ -78,6 +78,8 @@ class NotificationType(Enum):
     UninstallingModSwfOriginalElementNotFound = auto()
     UninstallingModSwfElementNotFound = auto()
 
+    FatalError = auto()
+
 
 
 class Notification:

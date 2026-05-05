@@ -73,7 +73,11 @@ class BaseDispatch(threading.Thread):
                 return
 
             elif method := _dispatchMap.get(data[0], None):
-                method(self, *data[1:])
+                try:
+                    method(self, *data[1:])
+                except Exception:
+                    import traceback, sys
+                    SendNotification(NotificationType.FatalError, "".join(traceback.format_exception(*sys.exc_info())))
 
     def sendNotification(self, notification: Notification):
         self.sendEnv(Environment.Notification, notification)

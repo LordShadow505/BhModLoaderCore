@@ -41,21 +41,18 @@ class DataMetaclass(type):
     def __new__(mcs, name, bases, attrs):
         def init(orig_init):
             def __init__(self, *args, **kwargs):
-                for varName, annotation in self.__annotations__.items():
-                    if getattr(self, varName, None) is not None:
-                        continue
+                for cls in self.__class__.__mro__:
+                    for varName, annotation in getattr(cls, "__annotations__", {}).items():
+                        if getattr(self, varName, None) is not None:
+                            continue
 
-                    if annotation in (list, dict, str):
-                        if getattr(self, varName, None) is None:
+                        if annotation in (list, dict, str):
                             setattr(self, varName, annotation())
-                    elif annotation == int:
-                        if getattr(self, varName, None) is None:
+                        elif annotation == int:
                             setattr(self, varName, 0)
-                    elif annotation == bool:
-                        if getattr(self, varName, None) is None:
+                        elif annotation == bool:
                             setattr(self, varName, False)
-                    elif getattr(annotation, "__origin__", None) in (dict, list):
-                        if getattr(self, varName, None) is None:
+                        elif getattr(annotation, "__origin__", None) in (dict, list):
                             setattr(self, varName, getattr(annotation, "__origin__")())
 
                 orig_init(self, *args, **kwargs)

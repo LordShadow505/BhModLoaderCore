@@ -32,6 +32,9 @@ class ModloaderCoreConfigClass(DataClass):
     DataVariable(formatType, 1, "installedMods")
     installedMods: List[ModloaderCoreMods]
 
+    DataVariable(formatType, 1, "customBrawlhallaPath")
+    customBrawlhallaPath: str
+
     def __init__(self):
         self.path = os.path.join(MODLOADER_CACHE_PATH, MODLOADER_CACHE_CORE_FILE)
         self.loadJsonFile(self.path)
