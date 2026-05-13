@@ -5,25 +5,26 @@ import codecs
 class UTF8String:
     
     #ctor
-    def __init__(self, length, string):
-        self.length = length
-        self.string = string
+    def __init__(self, string_bytes):
+        self.string_bytes = string_bytes
+        self.string = string_bytes.decode('utf-8', errors='replace')
+        self.length = len(string_bytes)
         
     #static class methods    
     @classmethod
     def FromBytesIO(cls, data):
         length = cls.__ReadUint16BE(data)
-        string = data.read(length).decode('utf-8')
-        return cls(length, string)
+        string_bytes = data.read(length)
+        return cls(string_bytes)
     
     @classmethod
     def FromString(cls, string):
-        return cls(len(string), string)    
+        return cls(string.encode('utf-8'))    
     
     #public
     def WriteBytesIO(self, data):
         data.write(self.length.to_bytes(2, byteorder="big"))
-        data.write(self.string.encode('utf-8'))
+        data.write(self.string_bytes)
         
     #private
     def __ReadUint16BE(data):

@@ -4,14 +4,24 @@ import jpype
 
 __all__ = []
 
-PLAYERGLOBAL = os.path.abspath(os.path.join(os.path.dirname(__file__), "playerglobal32_0.swc"))
-FFDEC_LIB = os.path.abspath(os.path.join(os.path.dirname(__file__), "ffdec_lib.jar"))
-CMYKJPEG_LIB = os.path.abspath(os.path.join(os.path.dirname(__file__), "cmykjpeg.jar"))
-JL_LIB = os.path.abspath(os.path.join(os.path.dirname(__file__), "jl1.0.1.jar"))
+def get_resource_path(filename):
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # In PyInstaller bundle, __file__ is relative to _MEIPASS or absolute
+        _base = os.path.dirname(__file__)
+        if not os.path.isabs(_base):
+            return os.path.join(sys._MEIPASS, _base, filename)
+        return os.path.join(_base, filename)
+    # In development
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), filename))
 
-assert os.path.exists(FFDEC_LIB), "ffdec_lib.jar doesn't exist"
-assert os.path.exists(CMYKJPEG_LIB), "cmykjpeg.jar doesn't exist"
-assert os.path.exists(JL_LIB), "jl1.0.1.jar doesn't exist"
+PLAYERGLOBAL = get_resource_path("playerglobal32_0.swc")
+FFDEC_LIB = get_resource_path("ffdec_lib.jar")
+CMYKJPEG_LIB = get_resource_path("cmykjpeg.jar")
+JL_LIB = get_resource_path("jl1.0.1.jar")
+
+assert os.path.exists(FFDEC_LIB), f"ffdec_lib.jar doesn't exist at {FFDEC_LIB}"
+assert os.path.exists(CMYKJPEG_LIB), f"cmykjpeg.jar doesn't exist at {CMYKJPEG_LIB}"
+assert os.path.exists(JL_LIB), f"jl1.0.1.jar doesn't exist at {JL_LIB}"
 
 jvmpath = None
 
@@ -41,7 +51,7 @@ else:
 if jvmpath is None:
     raise ImportError("Java not found!")
 
-jpype.startJVM(jvmpath, "-Xmx512m", "-Xms32m", classpath=[FFDEC_LIB, CMYKJPEG_LIB, JL_LIB])
+jpype.startJVM(jvmpath, "-Xmx2048m", "-Xms32m", classpath=[FFDEC_LIB, CMYKJPEG_LIB, JL_LIB])
 
 
 

@@ -54,7 +54,7 @@ class GameSwf(GameSwfData):
         self.gameSwf = Swf(gameFilePath, autoload=False)
 
     def open(self):
-        print(f"[DL DEBUG] GameSwf.open() for: {self.swfName}")
+
         self.gameSwf.open()
         self._loadFileDataInternal()
 
@@ -65,10 +65,10 @@ class GameSwf(GameSwfData):
             self.loadFromJson(self.gameSwf.metaData.get())
 
     def save(self):
-        print(f"[DL DEBUG] GameSwf.save() for: {self.swfName}")
+
         self.gameSwf.metaData.set(self.getDict())
         self.gameSwf.save()
-        print(f"[DL DEBUG] GameSwf.save() FINISHED for: {self.swfName}")
+
 
     def close(self):
         self.gameSwf.close()

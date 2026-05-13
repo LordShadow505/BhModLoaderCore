@@ -24,6 +24,7 @@ from .gameswf import GetGameFileClass
 from .gamefiles import GameFiles
 from .brawlhalla import BRAWLHALLA_SWFS, BRAWLHALLA_FILES, BRAWLHALLA_VERSION
 from .basedispatch import SendNotification
+from ..notifications import NotificationType
 
 from ..utils.hash import RandomHash, HashFile
 
@@ -41,6 +42,7 @@ from ..ffdec.classes import (CSMTextSettingsTag,
                              PlaceObject2Tag,
                              PlaceObject3Tag)
 from ..notifications import NotificationType
+from ..lang.language import LangFile
 
 __all__ = ["BaseModClass", "ModSource", "ModClass"]
 
@@ -84,6 +86,9 @@ class BaseModClass(DataClass):
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "files")
     files: Dict[int, str] = {}
+
+    DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 1, "langFiles")
+    langFiles: Dict[str, Dict[str, str]] = {}  # {"language.1.bin": {"key": "new_value"}}
 
     DataVariable([METADATA_FORMAT_MOD, METADATA_FORMAT_CACHE_MOD], 2, "authorId")
     authorId: int = 0
@@ -244,197 +249,244 @@ class ModSource(BaseModClass):
     def compile(self):
         SendNotification(NotificationType.CompileElementsCount, self.hash, self.getElementsCount())
 
-        if os.path.exists(self.modPath):
-            import time
-            for i in range(5):
-                try:
-                    os.remove(self.modPath)
-                    break
-                except PermissionError:
-                    time.sleep(0.5)
-                    if i == 4: raise
+        tempPath = self.modPath + ".tmp"
+        if os.path.exists(tempPath):
+            try:
+                os.remove(tempPath)
+            except:
+                pass
 
-        modSwf = Swf(self.modPath)
+        modSwf = Swf(tempPath)
         self.swfs = {}
         self.previewsIds = {}
         self.files = {}
-
-        for folder in os.listdir(self.modSourcesPath):
-            folderPath = os.path.join(self.modSourcesPath, folder)
-
-            if os.path.isfile(folderPath):
-                continue
-
-            # Import game elements
-            if folder.endswith(".swf") and folder in BRAWLHALLA_SWFS:
-                gameSwfName: str = folder
-                elementsMap = {}
-                self.swfs[gameSwfName] = {}
-                self.swfs[gameSwfName]["scripts"] = {}
-                self.swfs[gameSwfName]["sounds"] = []
-                self.swfs[gameSwfName]["sprites"] = []
-
-                for category in os.listdir(folderPath):
-                    categoryPath = os.path.join(folderPath, category)
-
-                    for elementPath in os.listdir(categoryPath):
-                        if category == "scripts":
-                            if script := self.regexAsFile.findall(elementPath):
-                                scriptAnchor = script[0]
-                                #print("Import ActionScript", scriptAnchor)
-                                SendNotification(NotificationType.CompileModSourcesImportActionScripts,
-                                                 self.hash, scriptAnchor)
-
-                                with open(os.path.join(categoryPath, elementPath), "r") as actionScript:
-                                    self.swfs[gameSwfName]["scripts"][scriptAnchor] = actionScript.read()
-
-                        elif category == "sounds":
-                            if sound := self.regexSoundFile.findall(elementPath):
-                                soundAnchor = sound[0]
-                                #print("Import Sound", soundAnchor)
-                                SendNotification(NotificationType.CompileModSourcesImportSound, self.hash, soundAnchor)
-
-                                self.swfs[gameSwfName]["sounds"].append(soundAnchor)
-
-                                soundTag = modSwf.importSoundFile(os.path.join(categoryPath, elementPath))
-                                modSwf.symbolClass.addTag(GetElementId(soundTag), soundAnchor)
-
-                        elif category == "sprites":
-                            if sprite := self.regexSpriteFile.findall(elementPath):
-                                _, spriteAnchor = sprite[0]
-
-                                SendNotification(NotificationType.CompileModSourcesImportSprite,
-                                                 self.hash, spriteAnchor)
-
-                                if not spriteAnchor:
-                                    SendNotification(NotificationType.CompileModSourcesSpriteHasNoSymbolclass,
-                                                     self.hash, elementPath)
-                                    continue
-
-                                self.swfs[gameSwfName]["sprites"].append(spriteAnchor)
-
-                                spriteSwf = Swf(os.path.join(categoryPath, elementPath, "frames.swf"))
-
-                                spriteElement = None
-                                spriteId = 0
-                                for element in spriteSwf.elementsList[::-1]:
-                                    if isinstance(element, DefineSpriteTag):
-                                        spriteElement = element
-                                        spriteId = GetElementId(element)
-                                        break
-                                else:
-                                    #print("Not found sprite in:", elementPath)
-                                    SendNotification(NotificationType.CompileModSourcesSpriteNotFoundInFolder,
-                                                     self.hash, elementPath)
-                                    continue
-
-                                cloneSprites = []
-                                cloneShapes = []
-
-                                for element in sorted(spriteSwf.elementsList, key=lambda x: GetElementId(x)):
-                                    if not isinstance(element,
-                                                      (CSMTextSettingsTag, DefineFontNameTag,
-                                                       DefineFontAlignZonesTag, PlaceObject2Tag)):
-
-                                        if GetElementId(element) in elementsMap:
-                                            if element == spriteElement:
-                                                for _element in spriteSwf.elementsList:
-                                                    if isinstance(_element, (*DefineShapeTags, DefineEditTextTag,
-                                                                             DefineSpriteTag,
-                                                                             *DefineBitsLosslessTags)) or \
-                                                            element == spriteElement:
-
-                                                        elementsMap.pop(GetElementId(_element), None)
-                                            else:
-                                                continue
-
-                                        newElId = modSwf.getNextCharacterId()
-                                        cloneEl = modSwf.cloneAndAddElement(element, newElId)
-                                        elementsMap[GetElementId(element)] = GetElementId(cloneEl)
-
-                                        if isinstance(cloneEl, DefineShapeTags):
-                                            if GetShapeBitmapId(cloneEl) is not None:
-                                                cloneShapes.append(cloneEl)
-
-                                        elif isinstance(cloneEl, DefineSpriteTag):
-                                            cloneSprites.append(cloneEl)
-
-                                        elif isinstance(element, DefineFontTags):
-                                            for dependentElement in spriteSwf.getElementById(GetElementId(element),
-                                                                                             (DefineFontNameTag,
-                                                                                              DefineFontAlignZonesTag)):
-                                                modSwf.cloneAndAddElement(dependentElement, newElId)
-
-                                        elif isinstance(element, DefineEditTextTag):
-                                            if dependentElement := spriteSwf.getElementById(GetElementId(element),
-                                                                                            CSMTextSettingsTag):
-                                                modSwf.cloneAndAddElement(dependentElement[0], newElId)
-                                            cloneEl.fontId = elementsMap[element.fontId]
-
-                                        elif isinstance(element, DefineTextTag):
-                                            if dependentElement := spriteSwf.getElementById(GetElementId(element),
-                                                                                            CSMTextSettingsTag):
-                                                modSwf.cloneAndAddElement(dependentElement[0], newElId)
-
-                                            for textRecord in cloneEl.textRecords:
-                                                if textRecord.styleFlagsHasFont:
-                                                    textRecord.fontId = elementsMap[textRecord.fontId]
-
-                                for cloneSprite in cloneSprites:
-                                    for sEl in cloneSprite.getTags().iterator():
-                                        if isinstance(sEl, PlaceObject2Tag) and sEl.characterId > 0:
-                                            SetElementId(sEl, elementsMap[sEl.characterId])
-                                        elif isinstance(sEl, PlaceObject3Tag) and sEl.characterId > 0:
-                                            SetElementId(sEl, elementsMap[sEl.characterId])
-
-                                for cloneShape in cloneShapes:
-                                    bitmapId = GetShapeBitmapId(cloneShape)
-                                    SetShapeBitmapId(cloneShape, elementsMap[bitmapId])
-
-                                if cloneSprites:
-                                    modSwf.symbolClass.addTag(elementsMap[spriteId], spriteAnchor)
-                                else:
-                                    SendNotification(NotificationType.CompileModSourcesSpriteEmpty,
-                                                     self.hash, spriteAnchor)
-
-                        else:
-                            #print(f"Error: Unsupported category '{category}'")
-                            SendNotification(NotificationType.CompileModSourcesUnsupportedCategory, self.hash, category)
-
-            # Import previews
-            elif folder.startswith("_"):
-                if folder == MODS_SOURCES_CACHE_PREVIEW:
-                    for n, preview in enumerate(os.listdir(folderPath)):
-                        #print("Import Preview", n)
-                        SendNotification(NotificationType.CompileModSourcesImportPreview, self.hash, n)
-
-                        binaryTag = modSwf.importBinaryFile(os.path.join(folderPath, preview))
-                        previewFormat = os.path.splitext(preview)[1][1:]
-                        self.previewsIds[GetElementId(binaryTag)] = previewFormat
-
-            # Import images, music
-            elif os.path.isdir(folderPath):
-                for path, folders, files in os.walk(folderPath):
-                    for file in files:
-                        if file in BRAWLHALLA_FILES:
-                            #print("Import File", file)
-                            SendNotification(NotificationType.CompileModSourcesImportFile, self.hash, file)
-
-                            binaryTag = modSwf.importBinaryFile(os.path.join(path, file))
-                            self.files[GetElementId(binaryTag)] = file
-
-                        else:
-                            #print("Error: Unknown file:", file)
-                            SendNotification(NotificationType.CompileModSourcesUnknownFile, self.hash, file)
+        self.langFiles = {}
 
         try:
-            modSwf.metaData.set(self.getDict())
-            modSwf.save()
-            modSwf.close()
-            del modSwf
-            SendNotification(NotificationType.CompileModSourcesFinished, self.hash)
-        except:
-            SendNotification(NotificationType.CompileModSourcesSaveError, self.hash)
+            for folder in os.listdir(self.modSourcesPath):
+                folderPath = os.path.join(self.modSourcesPath, folder)
+
+                if os.path.isfile(folderPath):
+                    continue
+
+                # Import game elements
+                if folder.endswith(".swf") and folder in BRAWLHALLA_SWFS:
+                    gameSwfName: str = folder
+                    elementsMap = {}
+                    self.swfs[gameSwfName] = {}
+                    self.swfs[gameSwfName]["scripts"] = {}
+                    self.swfs[gameSwfName]["sounds"] = []
+                    self.swfs[gameSwfName]["sprites"] = []
+
+                    for category in os.listdir(folderPath):
+                        categoryPath = os.path.join(folderPath, category)
+
+                        for elementPath in os.listdir(categoryPath):
+                            if category == "scripts":
+                                if script := self.regexAsFile.findall(elementPath):
+                                    scriptAnchor = script[0]
+                                    #print("Import ActionScript", scriptAnchor)
+                                    SendNotification(NotificationType.CompileModSourcesImportActionScripts,
+                                                     self.hash, scriptAnchor)
+
+                                    with open(os.path.join(categoryPath, elementPath), "r") as actionScript:
+                                        self.swfs[gameSwfName]["scripts"][scriptAnchor] = actionScript.read()
+
+                            elif category == "sounds":
+                                if sound := self.regexSoundFile.findall(elementPath):
+                                    soundAnchor = sound[0]
+                                    #print("Import Sound", soundAnchor)
+                                    SendNotification(NotificationType.CompileModSourcesImportSound, self.hash, soundAnchor)
+
+                                    self.swfs[gameSwfName]["sounds"].append(soundAnchor)
+
+                                    soundTag = modSwf.importSoundFile(os.path.join(categoryPath, elementPath))
+                                    modSwf.symbolClass.addTag(GetElementId(soundTag), soundAnchor)
+
+                            elif category == "sprites":
+                                if sprite := self.regexSpriteFile.findall(elementPath):
+                                    _, spriteAnchor = sprite[0]
+
+                                    SendNotification(NotificationType.CompileModSourcesImportSprite,
+                                                     self.hash, spriteAnchor)
+
+                                    if not spriteAnchor:
+                                        SendNotification(NotificationType.CompileModSourcesSpriteHasNoSymbolclass,
+                                                         self.hash, elementPath)
+                                        continue
+
+                                    self.swfs[gameSwfName]["sprites"].append(spriteAnchor)
+
+                                    spriteSwf = Swf(os.path.join(categoryPath, elementPath, "frames.swf"))
+
+                                    spriteElement = None
+                                    spriteId = 0
+                                    for element in spriteSwf.elementsList[::-1]:
+                                        if isinstance(element, DefineSpriteTag):
+                                            spriteElement = element
+                                            spriteId = GetElementId(element)
+                                            break
+                                    else:
+                                        #print("Not found sprite in:", elementPath)
+                                        SendNotification(NotificationType.CompileModSourcesSpriteNotFoundInFolder,
+                                                         self.hash, elementPath)
+                                        continue
+
+                                    cloneSprites = []
+                                    cloneShapes = []
+
+                                    for element in sorted(spriteSwf.elementsList, key=lambda x: GetElementId(x)):
+                                        if not isinstance(element,
+                                                          (CSMTextSettingsTag, DefineFontNameTag,
+                                                           DefineFontAlignZonesTag, PlaceObject2Tag)):
+
+                                            if GetElementId(element) in elementsMap:
+                                                if element == spriteElement:
+                                                    for _element in spriteSwf.elementsList:
+                                                        if isinstance(_element, (*DefineShapeTags, DefineEditTextTag,
+                                                                                  DefineSpriteTag,
+                                                                                  *DefineBitsLosslessTags)) or \
+                                                                element == spriteElement:
+
+                                                            elementsMap.pop(GetElementId(_element), None)
+                                                else:
+                                                    continue
+
+                                            newElId = modSwf.getNextCharacterId()
+                                            cloneEl = modSwf.cloneAndAddElement(element, newElId)
+                                            elementsMap[GetElementId(element)] = GetElementId(cloneEl)
+
+                                            if isinstance(cloneEl, DefineShapeTags):
+                                                if GetShapeBitmapId(cloneEl) is not None:
+                                                    cloneShapes.append(cloneEl)
+
+                                            elif isinstance(cloneEl, DefineSpriteTag):
+                                                cloneSprites.append(cloneEl)
+
+                                            elif isinstance(element, DefineFontTags):
+                                                for dependentElement in spriteSwf.getElementById(GetElementId(element),
+                                                                                                 (DefineFontNameTag,
+                                                                                                  DefineFontAlignZonesTag)):
+                                                    modSwf.cloneAndAddElement(dependentElement, newElId)
+
+                                            elif isinstance(element, DefineEditTextTag):
+                                                if dependentElement := spriteSwf.getElementById(GetElementId(element),
+                                                                                                CSMTextSettingsTag):
+                                                    modSwf.cloneAndAddElement(dependentElement[0], newElId)
+                                                cloneEl.fontId = elementsMap[element.fontId]
+
+                                            elif isinstance(element, DefineTextTag):
+                                                if dependentElement := spriteSwf.getElementById(GetElementId(element),
+                                                                                                CSMTextSettingsTag):
+                                                    modSwf.cloneAndAddElement(dependentElement[0], newElId)
+
+                                                for textRecord in cloneEl.textRecords:
+                                                    if textRecord.styleFlagsHasFont:
+                                                        textRecord.fontId = elementsMap[textRecord.fontId]
+
+                                    for cloneSprite in cloneSprites:
+                                        for sEl in cloneSprite.getTags().iterator():
+                                            if isinstance(sEl, (PlaceObject2Tag, PlaceObject3Tag)) and sEl.characterId > 0:
+                                                if sEl.characterId not in elementsMap:
+                                                    SendNotification(NotificationType.CompileModSourcesDefectivePiece,
+                                                                     self.hash, spriteAnchor, sEl.characterId)
+                                                    raise KeyError(f"Defective piece in '{spriteAnchor}': element {sEl.characterId} not found")
+                                                SetElementId(sEl, elementsMap[sEl.characterId])
+
+                                    for cloneShape in cloneShapes:
+                                        bitmapId = GetShapeBitmapId(cloneShape)
+                                        if bitmapId not in elementsMap:
+                                            SendNotification(NotificationType.CompileModSourcesDefectivePiece,
+                                                             self.hash, spriteAnchor, bitmapId)
+                                            raise KeyError(f"Defective piece in '{spriteAnchor}': bitmap {bitmapId} not found")
+                                        SetShapeBitmapId(cloneShape, elementsMap[bitmapId])
+
+                                    if cloneSprites:
+                                        modSwf.symbolClass.addTag(elementsMap[spriteId], spriteAnchor)
+                                    else:
+                                        SendNotification(NotificationType.CompileModSourcesSpriteEmpty,
+                                                         self.hash, spriteAnchor)
+
+                            else:
+                                #print(f"Error: Unsupported category '{category}'")
+                                SendNotification(NotificationType.CompileModSourcesUnsupportedCategory, self.hash, category)
+
+                # Import previews
+                elif folder.startswith("_"):
+                    if folder == MODS_SOURCES_CACHE_PREVIEW:
+                        for n, preview in enumerate(os.listdir(folderPath)):
+                            #print("Import Preview", n)
+                            SendNotification(NotificationType.CompileModSourcesImportPreview, self.hash, n)
+
+                            binaryTag = modSwf.importBinaryFile(os.path.join(folderPath, preview))
+                            previewFormat = os.path.splitext(preview)[1][1:]
+                            self.previewsIds[GetElementId(binaryTag)] = previewFormat
+
+                # Import language .bin patches
+                elif folder.lower() == "languages" and os.path.isdir(folderPath):
+                    for langFile in os.listdir(folderPath):
+                        if not langFile.lower().endswith(".bin"):
+                            continue
+                        langFilePath = os.path.join(folderPath, langFile)
+                        SendNotification(NotificationType.CompileModSourcesImportLangFile,
+                                         self.hash, langFile)
+                        try:
+                            lf = LangFile(langFilePath)
+                            if langFile not in self.langFiles:
+                                self.langFiles[langFile] = {}
+                            for entry in lf.entries:
+                                self.langFiles[langFile][entry.key.string] = entry.value.string
+                        except Exception as _le:
+                            SendNotification(NotificationType.CompileModSourcesGeneralError,
+                                             self.hash, str(_le), "")
+
+                # Import images, music
+                elif os.path.isdir(folderPath):
+                    for path, folders, files in os.walk(folderPath):
+                        for file in files:
+                            if file in BRAWLHALLA_FILES:
+                                #print("Import File", file)
+                                SendNotification(NotificationType.CompileModSourcesImportFile, self.hash, file)
+
+                                binaryTag = modSwf.importBinaryFile(os.path.join(path, file))
+                                self.files[GetElementId(binaryTag)] = file
+
+                            else:
+                                #print("Error: Unknown file:", file)
+                                # Skip language .bin files silently — handled by lang branch
+                                if not file.lower().endswith(".bin"):
+                                    SendNotification(NotificationType.CompileModSourcesUnknownFile, self.hash, file)
+
+            try:
+                modSwf.metaData.set(self.getDict())
+                modSwf.save()
+                modSwf.close()
+                # Success move
+                if os.path.exists(self.modPath):
+                    import time
+                    for i in range(5):
+                        try:
+                            os.remove(self.modPath)
+                            break
+                        except:
+                            time.sleep(0.5)
+                os.rename(tempPath, self.modPath)
+                from .modloader import ModLoader
+                ModLoader.reloadMod(self.modPath)
+                SendNotification(NotificationType.CompileModSourcesFinished, self.hash)
+            except:
+                SendNotification(NotificationType.CompileModSourcesSaveError, self.hash)
+        except Exception as e:
+            if not isinstance(e, KeyError):
+                SendNotification(NotificationType.CompileModSourcesGeneralError, self.hash, str(e), traceback.format_exc())
+        finally:
+            if modSwf.isOpen():
+                modSwf.close()
+            if os.path.exists(tempPath):
+                try:
+                    os.remove(tempPath)
+                except:
+                    pass
 
     def delete(self):
         shutil.rmtree(self.modSourcesPath)
@@ -530,7 +582,7 @@ class ModClass(ModCache):
                 _cache = True
 
             if _cache:
-                print(f"[DL DEBUG] Initializing ModClass for: {modPath}")
+
                 SendNotification(NotificationType.LoadingMod, modPath)
                 SendNotification(NotificationType.LoadingModData, modPath)
                 self.loadModData()
@@ -575,7 +627,8 @@ class ModClass(ModCache):
             self.saveCache()
 
     def open(self):
-        self.modSwf.open()
+        if self.modSwf is not None:
+            self.modSwf.open()
 
     def close(self):
         self.modSwf.close()
@@ -654,6 +707,10 @@ class ModClass(ModCache):
     def getModConflict(self) -> List[str]:
         LOCK.acquire(True)
         try:
+            if not self.modFileExist or self.modSwf is None:
+                SendNotification(NotificationType.FatalError, f"Cannot search conflicts for '{self.name}'. The mod file (.bmod) is missing or corrupt. Please try building the mod again.")
+                return []
+
             SendNotification(NotificationType.ModElementsCount, self.hash, len(self.swfs))
 
             temp_gameFiles = []
@@ -680,8 +737,6 @@ class ModClass(ModCache):
                 gameFile.close()
 
             if conflictMods:
-                pass
-                # print("Mod conflict:", list(conflictMods))
                 SendNotification(NotificationType.ModConflict, self.hash, list(conflictMods))
             else:
                 del temp_gameFiles
@@ -689,13 +744,20 @@ class ModClass(ModCache):
                 #del conflictMods
 
             return list(conflictMods)
+        except Exception as e:
+            SendNotification(NotificationType.FatalError, f"Failed to search for conflicts: {str(e)}\n\n{traceback.format_exc()}")
+            return []
         finally:
             LOCK.release()
 
     def install(self, forceInstallation=False):
-        print(f"[DL DEBUG] Starting installation of mod: {self.name} ({self.hash})")
+
         LOCK.acquire(True)
         try:
+            if not self.modFileExist or self.modSwf is None:
+                SendNotification(NotificationType.FatalError, f"Cannot install mod '{self.name}'. The mod file (.bmod) is missing or corrupt. Please try building the mod again.")
+                return
+
             SendNotification(NotificationType.ModElementsCount, self.hash, self.getElementsCount())
 
             self.open()
@@ -723,7 +785,7 @@ class ModClass(ModCache):
                 GameFiles.installFile(fileName, self.modSwf.exportBinaryData(fileElement), self.hash)
 
             for swfName, swfMap in self.swfs.items():
-                print(f"[DL DEBUG] Installing to SWF: {swfName}")
+
                 gameFile = GetGameFileClass(swfName)
                 gameFile.open()
 
@@ -802,11 +864,34 @@ class ModClass(ModCache):
                 gameFile.close()
 
             SendNotification(NotificationType.InstallingModFinished, self.hash)
-            print(f"[DL DEBUG] Installation of mod {self.name} FINISHED")
+
+            # ── Install language .bin patches ──────────────────────────────────
+            if self.langFiles:
+                from .langfiles import LangFiles
+                from .brawlhalla import BRAWLHALLA_LANG_FILES
+                for bin_name, patches in self.langFiles.items():
+                    game_path = BRAWLHALLA_LANG_FILES.get(bin_name)
+                    if not game_path or not os.path.exists(game_path):
+                        SendNotification(NotificationType.InstallingModNotFoundFileElement,
+                                         self.hash, bin_name)
+                        continue
+                    SendNotification(NotificationType.InstallingModLangFile, self.hash, bin_name)
+                    try:
+                        lf = LangFile(game_path)
+                        for key, new_val in patches.items():
+                            orig = lf[key]
+                            LangFiles.record_install(bin_name, key,
+                                                     orig if orig is not None else "",
+                                                     self.hash)
+                            lf[key] = new_val
+                        lf.Save(game_path)
+                    except Exception as _le:
+                        SendNotification(NotificationType.FatalError,
+                                         f"Lang patch failed for {bin_name}: {_le}")
 
             self.installed = True
             self.saveCache()
-            print(f"[DL DEBUG] Mod Cache SAVED for {self.name}")
+
         except Exception as e:
             SendNotification(NotificationType.FatalError, f"Failed to install mod: {str(e)}\n\n{traceback.format_exc()}")
         finally:
@@ -818,6 +903,26 @@ class ModClass(ModCache):
             SendNotification(NotificationType.ModElementsCount, self.hash, self.getElementsCount())
 
             GameFiles.uninstallMod(self.hash)
+
+            # ── Restore language .bin patches ──────────────────────────────────
+            if self.langFiles:
+                from .langfiles import LangFiles
+                from .brawlhalla import BRAWLHALLA_LANG_FILES
+                to_restore = LangFiles.uninstall_mod(self.hash)
+                for bin_name, keys in to_restore.items():
+                    game_path = BRAWLHALLA_LANG_FILES.get(bin_name)
+                    if not game_path or not os.path.exists(game_path):
+                        continue
+                    SendNotification(NotificationType.UninstallingModLangFile,
+                                     self.hash, bin_name)
+                    try:
+                        lf = LangFile(game_path)
+                        for key, orig_val in keys.items():
+                            lf[key] = orig_val
+                        lf.Save(game_path)
+                    except Exception as _le:
+                        SendNotification(NotificationType.FatalError,
+                                         f"Lang restore failed for {bin_name}: {_le}")
 
             for swfName in self.swfs:
                 gameFile = GetGameFileClass(swfName)

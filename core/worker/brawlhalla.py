@@ -8,12 +8,13 @@ from ..utils.hash import HashFile
 from ..ffdec.classes import ArrayList, Configuration, HighlightedTextWriter, ScriptExportMode
 from ..swf import Swf
 
-__all__ = ["BRAWLHALLA_PATH", "BRAWLHALLA_SWFS", "BRAWLHALLA_FILES", "BRAWLHALLA_VERSION"]
+__all__ = ["BRAWLHALLA_PATH", "BRAWLHALLA_SWFS", "BRAWLHALLA_FILES", "BRAWLHALLA_LANG_FILES", "BRAWLHALLA_VERSION"]
 
 
 BRAWLHALLA_PATH = None
 BRAWLHALLA_SWFS = {}
 BRAWLHALLA_FILES = {}
+BRAWLHALLA_LANG_FILES = {}   # {"language.1.bin": "/abs/path/language.1.bin"}
 BRAWLHALLA_VERSION = None
 
 
@@ -126,6 +127,14 @@ if BRAWLHALLA_PATH is not None:
         for file in files:
             if file.endswith(".mp3") or file.endswith(".png") or file.endswith(".jpg"):
                 BRAWLHALLA_FILES[file] = os.path.join(path, file)
+
+    # Search brawlhalla language files
+    _lang_folder = os.path.join(BRAWLHALLA_PATH, "languages")
+    if os.path.isdir(_lang_folder):
+        for _lf in os.listdir(_lang_folder):
+            if _lf.lower().endswith(".bin"):
+                BRAWLHALLA_LANG_FILES[_lf] = os.path.join(_lang_folder, _lf)
+    del _lang_folder
 
     # Get brawlhalla version
     _bhAir = BRAWLHALLA_SWFS.get("BrawlhallaAir.swf", None)

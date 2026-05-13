@@ -27,6 +27,8 @@ class NotificationType(Enum):
     CompileModSourcesUnknownFile = auto()
 
     CompileModSourcesSaveError = auto()
+    CompileModSourcesDefectivePiece = auto()
+    CompileModSourcesGeneralError = auto()
 
     ## Mods
     # Loading
@@ -57,6 +59,11 @@ class NotificationType(Enum):
     UninstallingModSwfSound = auto()
     UninstallingModSwfSprite = auto()
     UninstallingModFinished = auto()
+
+    # Lang (language .bin)
+    InstallingModLangFile = auto()
+    UninstallingModLangFile = auto()
+    CompileModSourcesImportLangFile = auto()
 
     # Warnings
     InstallingModInFileAlreadyInstalled = auto()  # If mod already installed in file

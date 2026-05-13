@@ -22,6 +22,8 @@ class ModLoaderClass:
         if not os.path.exists(self.modsCachePath):
             os.mkdir(self.modsCachePath)
 
+        self.modsHashSumCache = ModsHashSumCache(self.modsCachePath)
+
     def reload(self):
         self.reloadMods()
         self.reloadModsSources()
@@ -45,7 +47,6 @@ class ModLoaderClass:
 
     def loadMods(self):
         modsHashes = []
-        cacheHashes = ModsHashSumCache(self.modsCachePath)
 
         if MODS_PATH:
             modsPath = MODS_PATH[0]
@@ -54,9 +55,9 @@ class ModLoaderClass:
             for modFile in os.listdir(modsPath):
                 modPath = os.path.join(modsPath, modFile)
                 if modFile.endswith(f".{MOD_FILE_FORMAT}") and os.path.isfile(modPath):
-                    print(f"[DL DEBUG] Loading mod file: {modFile}")
+
                     try:
-                        modClass = ModClass(modPath=modPath, modsCachePath=self.modsCachePath, sharedHashCache=cacheHashes)
+                        modClass = ModClass(modPath=modPath, modsCachePath=self.modsCachePath, sharedHashCache=self.modsHashSumCache)
                         # Not load duplicate
                         if modClass.hash not in modsHashes:
                             modsHashes.append(modClass.hash)
@@ -64,10 +65,10 @@ class ModLoaderClass:
                     except:
                         pass
 
-        for modHash in cacheHashes.hashes.values():
+        for modHash in self.modsHashSumCache.hashes.values():
             if modHash not in modsHashes:
                 try:
-                    modClass = ModClass(modsCachePath=self.modsCachePath, modHash=modHash, sharedHashCache=cacheHashes)
+                    modClass = ModClass(modsCachePath=self.modsCachePath, modHash=modHash, sharedHashCache=self.modsHashSumCache)
                     self.modsClasses.append(modClass)
                 except:
                     pass

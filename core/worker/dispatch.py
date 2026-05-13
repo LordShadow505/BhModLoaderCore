@@ -30,9 +30,7 @@ class Dispatch(BaseDispatch):
         # In Creator, we usually have the source hash.
         modSource = ModLoader.getModSourcesByHash(hash)
         if modSource:
-            from .variables import MOD_FILE_FORMAT
-            modPath = modSource.modSourcesPath + f".{MOD_FILE_FORMAT}"
-            ModLoader.reloadMod(modPath)
+            ModLoader.reloadMod(modSource.modPath)
             return True, hash
         
         # In Loader, we might have the mod hash.
@@ -79,8 +77,9 @@ class Dispatch(BaseDispatch):
                 threading.Thread(target=mod.install, kwargs={"forceInstallation": True}).start()
                 return True, hash
             else:
-                from ..notifications import SendNotification, NotificationType
-                SendNotification(NotificationType.FatalError, f"Mod with hash {hash} does not have an installation method. It might need to be built first.")
+                from .basedispatch import SendNotification
+                from ..notifications import NotificationType
+                SendNotification(NotificationType.FatalError, "Compiled mod (.bmod) not found. Please build the mod again before installing.")
                 return False, None
 
         return False, None
@@ -107,8 +106,9 @@ class Dispatch(BaseDispatch):
                 threading.Thread(target=mod.uninstall).start()
                 return True, hash
             else:
-                from ..notifications import SendNotification, NotificationType
-                SendNotification(NotificationType.FatalError, f"Mod with hash {hash} does not have an uninstallation method.")
+                from .basedispatch import SendNotification
+                from ..notifications import NotificationType
+                SendNotification(NotificationType.FatalError, "Compiled mod (.bmod) not found. Cannot uninstall. Try building it again if you wish to manage it.")
                 return False, None
 
         return False, None
