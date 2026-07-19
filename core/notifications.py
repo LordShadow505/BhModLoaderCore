@@ -28,6 +28,7 @@ class NotificationType(Enum):
 
     CompileModSourcesSaveError = auto()
     CompileModSourcesDefectivePiece = auto()
+    CompileModSourcesDuplicateSpriteId = auto()
     CompileModSourcesGeneralError = auto()
 
     ## Mods

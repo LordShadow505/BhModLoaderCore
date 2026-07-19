@@ -280,6 +280,8 @@ class ModSource(BaseModClass):
 
                     for category in os.listdir(folderPath):
                         categoryPath = os.path.join(folderPath, category)
+                        seen_sprite_ids = {}
+                        seen_internal_sprite_ids = {}
 
                         for elementPath in os.listdir(categoryPath):
                             if category == "scripts":
@@ -305,7 +307,14 @@ class ModSource(BaseModClass):
 
                             elif category == "sprites":
                                 if sprite := self.regexSpriteFile.findall(elementPath):
-                                    _, spriteAnchor = sprite[0]
+                                    sprite_id_str, spriteAnchor = sprite[0]
+
+                                    if sprite_id_str in seen_sprite_ids:
+                                        SendNotification(NotificationType.CompileModSourcesDuplicateSpriteId,
+                                                         self.hash, sprite_id_str, elementPath, seen_sprite_ids[sprite_id_str])
+                                        raise KeyError(f"Duplicate sprite ID {sprite_id_str} detected between '{elementPath}' and '{seen_sprite_ids[sprite_id_str]}'")
+                                    
+                                    seen_sprite_ids[sprite_id_str] = elementPath
 
                                     SendNotification(NotificationType.CompileModSourcesImportSprite,
                                                      self.hash, spriteAnchor)
@@ -331,6 +340,13 @@ class ModSource(BaseModClass):
                                         SendNotification(NotificationType.CompileModSourcesSpriteNotFoundInFolder,
                                                          self.hash, elementPath)
                                         continue
+
+                                    if spriteId in seen_internal_sprite_ids:
+                                        SendNotification(NotificationType.CompileModSourcesDuplicateSpriteId,
+                                                         self.hash, str(spriteId), elementPath, seen_internal_sprite_ids[spriteId])
+                                        raise KeyError(f"Duplicate internal sprite ID {spriteId} detected between '{elementPath}' and '{seen_internal_sprite_ids[spriteId]}'")
+                                    
+                                    seen_internal_sprite_ids[spriteId] = elementPath
 
                                     cloneSprites = []
                                     cloneShapes = []
@@ -389,16 +405,16 @@ class ModSource(BaseModClass):
                                             if isinstance(sEl, (PlaceObject2Tag, PlaceObject3Tag)) and sEl.characterId > 0:
                                                 if sEl.characterId not in elementsMap:
                                                     SendNotification(NotificationType.CompileModSourcesDefectivePiece,
-                                                                     self.hash, spriteAnchor, sEl.characterId)
-                                                    raise KeyError(f"Defective piece in '{spriteAnchor}': element {sEl.characterId} not found")
+                                                                     self.hash, elementPath, sEl.characterId)
+                                                    raise KeyError(f"Defective piece in '{elementPath}': element {sEl.characterId} not found")
                                                 SetElementId(sEl, elementsMap[sEl.characterId])
 
                                     for cloneShape in cloneShapes:
                                         bitmapId = GetShapeBitmapId(cloneShape)
                                         if bitmapId not in elementsMap:
                                             SendNotification(NotificationType.CompileModSourcesDefectivePiece,
-                                                             self.hash, spriteAnchor, bitmapId)
-                                            raise KeyError(f"Defective piece in '{spriteAnchor}': bitmap {bitmapId} not found")
+                                                             self.hash, elementPath, bitmapId)
+                                            raise KeyError(f"Defective piece in '{elementPath}': bitmap {bitmapId} not found")
                                         SetShapeBitmapId(cloneShape, elementsMap[bitmapId])
 
                                     if cloneSprites:

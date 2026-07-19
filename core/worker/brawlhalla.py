@@ -78,7 +78,7 @@ if sys.platform in ["win32", "win64"]:
         path = None
 
         i = 0
-        while not found and i < 7:
+        while not found and i < 5:
             time.sleep(1)
 
             for proc in psutil.process_iter():
@@ -98,13 +98,7 @@ if sys.platform in ["win32", "win64"]:
         BRAWLHALLA_PATH = path
 
     if BRAWLHALLA_PATH is None:
-        import multiprocessing
-
-        FileExistsError("Brawlhalla not found!")
-
-        if multiprocessing.parent_process() is not None:
-            os.kill(multiprocessing.parent_process().pid, 15)
-        os.kill(multiprocessing.current_process().pid, 15)
+        print("Brawlhalla not found! Please set the path manually in settings.")
 
 elif sys.platform == "darwin":
     pass
