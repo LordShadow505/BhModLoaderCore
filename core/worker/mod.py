@@ -257,6 +257,8 @@ class ModSource(BaseModClass):
                 pass
 
         modSwf = Swf(tempPath)
+        if modSwf.metaData is None:
+            modSwf.addMetadata()
         self.swfs = {}
         self.previewsIds = {}
         self.files = {}
@@ -474,6 +476,8 @@ class ModSource(BaseModClass):
                                     SendNotification(NotificationType.CompileModSourcesUnknownFile, self.hash, file)
 
             try:
+                if modSwf.metaData is None:
+                    modSwf.addMetadata()
                 modSwf.metaData.set(self.getDict())
                 modSwf.save()
                 modSwf.close()
@@ -942,6 +946,8 @@ class ModClass(ModCache):
 
             for swfName in self.swfs:
                 gameFile = GetGameFileClass(swfName)
+                if gameFile is None:
+                    continue
                 gameFile.open()
 
                 gameFile.uninstallMod(self.hash)
