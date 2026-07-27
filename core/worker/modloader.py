@@ -34,10 +34,28 @@ class ModLoaderClass:
         self.modsGhosts = []
 
     def getModsData(self):
-        return [{**mod.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"]),
-                 "previewsPaths": mod.getPreviewsPaths(), "currentGameVersion": self.config.brawlhallaVersion,
-                 "date": mod.date}
-                for mod in self.modsClasses]
+        result = []
+        for mod in self.modsClasses:
+            d = mod.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"])
+            swf_names = list(mod.swfs.keys()) if hasattr(mod, 'swfs') and mod.swfs else []
+            file_names = list(mod.files.values()) if hasattr(mod, 'files') and mod.files else []
+            
+            sprite_names = []
+            if hasattr(mod, 'swfs') and mod.swfs:
+                for swf_data in mod.swfs.values():
+                    if isinstance(swf_data, dict) and "sprites" in swf_data:
+                        sprite_names.extend(swf_data["sprites"])
+
+            d.update({
+                "previewsPaths": mod.getPreviewsPaths(),
+                "currentGameVersion": self.config.brawlhallaVersion,
+                "date": mod.date,
+                "swfNames": swf_names,
+                "fileNames": file_names,
+                "spriteNames": sprite_names
+            })
+            result.append(d)
+        return result
 
     def getModsSourcesData(self):
         return [{**modSources.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"]),
