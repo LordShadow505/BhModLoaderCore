@@ -121,7 +121,8 @@ else:
 if jvmpath is None:
     raise ImportError("Java not found!")
 
-jpype.startJVM(jvmpath, "-Xmx2048m", "-Xms32m", classpath=[FFDEC_LIB, CMYKJPEG_LIB, JL_LIB])
+jpype.startJVM(jvmpath, "-Xmx2048m", "-Xms32m", "-XX:+UseSerialGC", classpath=[FFDEC_LIB, CMYKJPEG_LIB, JL_LIB])
+
 
 
 
