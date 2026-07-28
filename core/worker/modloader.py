@@ -47,6 +47,7 @@ class ModLoaderClass:
                         sprite_names.extend(swf_data["sprites"])
 
             d.update({
+                "modPath": getattr(mod, 'modPath', ""),
                 "previewsPaths": mod.getPreviewsPaths(),
                 "currentGameVersion": self.config.brawlhallaVersion,
                 "date": mod.date,
@@ -73,10 +74,8 @@ class ModLoaderClass:
             for modFile in os.listdir(modsPath):
                 modPath = os.path.join(modsPath, modFile)
                 if modFile.endswith(f".{MOD_FILE_FORMAT}") and os.path.isfile(modPath):
-
                     try:
                         modClass = ModClass(modPath=modPath, modsCachePath=self.modsCachePath, sharedHashCache=self.modsHashSumCache)
-                        # Not load duplicate
                         if modClass.hash not in modsHashes:
                             modsHashes.append(modClass.hash)
                             self.modsClasses.append(modClass)

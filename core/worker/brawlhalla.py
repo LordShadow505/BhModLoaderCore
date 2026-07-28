@@ -106,29 +106,44 @@ elif sys.platform == "darwin":
 else:
     pass
 
-if BRAWLHALLA_PATH is not None:
-    # Search brawlhalla swfs
-    for path, _, files in os.walk(BRAWLHALLA_PATH):
-        if len(path.replace(BRAWLHALLA_PATH, "").split("\\")) > 2:
-            continue
-
-        for file in files:
-            if file.endswith(".swf"):
-                BRAWLHALLA_SWFS[file] = os.path.join(path, file)
-
-    # Search brawlhalla files
-    for path, _, files in os.walk(BRAWLHALLA_PATH):
-        for file in files:
-            if file.endswith(".mp3") or file.endswith(".png") or file.endswith(".jpg"):
-                BRAWLHALLA_FILES[file] = os.path.join(path, file)
+if BRAWLHALLA_PATH is not None and os.path.exists(BRAWLHALLA_PATH):
+    try:
+        # Fast shallow scan of Brawlhalla folder (depth <= 1)
+        root_files = os.listdir(BRAWLHALLA_PATH)
+        for f in root_files:
+            full_p = os.path.join(BRAWLHALLA_PATH, f)
+            if os.path.isfile(full_p):
+                f_lower = f.lower()
+                if f_lower.endswith(".swf"):
+                    BRAWLHALLA_SWFS[f] = full_p
+                elif f_lower.endswith((".mp3", ".png", ".jpg")):
+                    BRAWLHALLA_FILES[f] = full_p
+            elif os.path.isdir(full_p):
+                try:
+                    for sf in os.listdir(full_p):
+                        sub_p = os.path.join(full_p, sf)
+                        if os.path.isfile(sub_p):
+                            sf_lower = sf.lower()
+                            if sf_lower.endswith(".swf"):
+                                BRAWLHALLA_SWFS[sf] = sub_p
+                            elif sf_lower.endswith((".mp3", ".png", ".jpg")):
+                                BRAWLHALLA_FILES[sf] = sub_p
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[Brawlhalla] Error scanning directory: {e}")
 
     # Search brawlhalla language files
     _lang_folder = os.path.join(BRAWLHALLA_PATH, "languages")
     if os.path.isdir(_lang_folder):
         for _lf in os.listdir(_lang_folder):
-            if _lf.lower().endswith(".bin"):
+            if _lf.lower().endswith(".bin Bin"):
+                BRAWLHALLA_LANG_FILES[_lf] = os.path.join(_lang_folder, _lf)
+            elif _lf.lower().endswith(".bin"):
                 BRAWLHALLA_LANG_FILES[_lf] = os.path.join(_lang_folder, _lf)
     del _lang_folder
+
+
 
     # Get brawlhalla version
     _bhAir = BRAWLHALLA_SWFS.get("BrawlhallaAir.swf", None)
