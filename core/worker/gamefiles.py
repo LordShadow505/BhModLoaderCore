@@ -49,8 +49,24 @@ class GameFilesClass(GameFilesData):
         #print("Install file", fileName)
         SendNotification(NotificationType.InstallingModFile, modHash, fileName)
 
-        if fileName in BRAWLHALLA_FILES:
-            with open(BRAWLHALLA_FILES[fileName], "rb") as file:
+        targetPath = BRAWLHALLA_FILES.get(fileName)
+        if not targetPath:
+            fn_lower = fileName.lower()
+            for k, v in BRAWLHALLA_FILES.items():
+                if k.lower() == fn_lower:
+                    targetPath = v
+                    fileName = k
+                    break
+
+        if not targetPath or not os.path.exists(targetPath):
+            SendNotification(
+                NotificationType.FatalError,
+                f"Cannot install file '{fileName}'. The target game file was not found in the Brawlhalla directory. If Brawlhalla updated recently, please verify your game files on Steam."
+            )
+            return
+
+        try:
+            with open(targetPath, "rb") as file:
                 origFileContent = file.read()
 
             origFileHash = HashFromBytes(origFileContent)
@@ -81,23 +97,56 @@ class GameFilesClass(GameFilesData):
 
             if origFileHash != modFileHash:
                 #print("Замена оригинального файла")
-                with open(BRAWLHALLA_FILES[fileName], "wb") as modFile:
+                with open(targetPath, "wb") as modFile:
                     modFile.write(modFileContent)
 
             self.modFiles[fileName] = modFileHash
             self.modifiedFilesMap[fileName] = modHash
 
             self.saveData()
-
-        pass
+        except Exception as e:
+            SendNotification(
+                NotificationType.FatalError,
+                f"Error processing game file '{fileName}': {str(e)}"
+            )
 
     def repairFile(self, fileName: str):
         if fileName in self.origFiles:
-            with open(os.path.join(self.origPreviewsPath, fileName), "rb") as copyFile:
-                origFileContent = copyFile.read()
+            orig_path = os.path.join(self.origPreviewsPath, fileName)
+            if not os.path.exists(orig_path):
+                SendNotification(
+                    NotificationType.FatalError,
+                    f"Cannot restore original file '{fileName}'. Backup copy is missing from the cache folder."
+                )
+                self.modFiles.pop(fileName, None)
+                self.modifiedFilesMap.pop(fileName, None)
+                return
 
-            with open(BRAWLHALLA_FILES[fileName], "wb") as file:
-                file.write(origFileContent)
+            try:
+                with open(orig_path, "rb") as copyFile:
+                    origFileContent = copyFile.read()
+
+                targetPath = BRAWLHALLA_FILES.get(fileName)
+                if not targetPath:
+                    fn_lower = fileName.lower()
+                    for k, v in BRAWLHALLA_FILES.items():
+                        if k.lower() == fn_lower:
+                            targetPath = v
+                            break
+
+                if not targetPath or not os.path.exists(os.path.dirname(targetPath)):
+                    SendNotification(
+                        NotificationType.FatalError,
+                        f"Cannot restore game file '{fileName}'. The target file was not found in the Brawlhalla folder (it may have been moved or removed in a recent game update)."
+                    )
+                else:
+                    with open(targetPath, "wb") as file:
+                        file.write(origFileContent)
+            except Exception as e:
+                SendNotification(
+                    NotificationType.FatalError,
+                    f"Error restoring game file '{fileName}': {str(e)}"
+                )
 
             self.modFiles.pop(fileName, None)
             self.modifiedFilesMap.pop(fileName, None)
