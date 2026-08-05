@@ -108,28 +108,15 @@ else:
 
 if BRAWLHALLA_PATH is not None and os.path.exists(BRAWLHALLA_PATH):
     try:
-        # Fast shallow scan of Brawlhalla folder (depth <= 1)
-        root_files = os.listdir(BRAWLHALLA_PATH)
-        for f in root_files:
-            full_p = os.path.join(BRAWLHALLA_PATH, f)
-            if os.path.isfile(full_p):
+        # Full recursive scan of Brawlhalla folder to find all SWF, image, and sound files
+        for root, dirs, files in os.walk(BRAWLHALLA_PATH):
+            for f in files:
                 f_lower = f.lower()
+                full_p = os.path.join(root, f)
                 if f_lower.endswith(".swf"):
                     BRAWLHALLA_SWFS[f] = full_p
                 elif f_lower.endswith((".mp3", ".png", ".jpg")):
                     BRAWLHALLA_FILES[f] = full_p
-            elif os.path.isdir(full_p):
-                try:
-                    for sf in os.listdir(full_p):
-                        sub_p = os.path.join(full_p, sf)
-                        if os.path.isfile(sub_p):
-                            sf_lower = sf.lower()
-                            if sf_lower.endswith(".swf"):
-                                BRAWLHALLA_SWFS[sf] = sub_p
-                            elif sf_lower.endswith((".mp3", ".png", ".jpg")):
-                                BRAWLHALLA_FILES[sf] = sub_p
-                except Exception:
-                    pass
     except Exception as e:
         print(f"[Brawlhalla] Error scanning directory: {e}")
 

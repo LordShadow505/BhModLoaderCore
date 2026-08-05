@@ -272,8 +272,19 @@ class ModSource(BaseModClass):
                     continue
 
                 # Import game elements
-                if folder.endswith(".swf") and folder in BRAWLHALLA_SWFS:
-                    gameSwfName: str = folder
+                swf_target = None
+                if folder.endswith(".swf"):
+                    if folder in BRAWLHALLA_SWFS:
+                        swf_target = folder
+                    else:
+                        f_lower = folder.lower()
+                        for k in BRAWLHALLA_SWFS:
+                            if k.lower() == f_lower:
+                                swf_target = k
+                                break
+
+                if swf_target:
+                    gameSwfName: str = swf_target
                     elementsMap = {}
                     self.swfs[gameSwfName] = {}
                     self.swfs[gameSwfName]["scripts"] = {}
@@ -462,15 +473,22 @@ class ModSource(BaseModClass):
                 elif os.path.isdir(folderPath):
                     for path, folders, files in os.walk(folderPath):
                         for file in files:
+                            target_file = None
                             if file in BRAWLHALLA_FILES:
-                                #print("Import File", file)
-                                SendNotification(NotificationType.CompileModSourcesImportFile, self.hash, file)
+                                target_file = file
+                            else:
+                                file_lower = file.lower()
+                                for k in BRAWLHALLA_FILES:
+                                    if k.lower() == file_lower:
+                                        target_file = k
+                                        break
+
+                            if target_file:
+                                SendNotification(NotificationType.CompileModSourcesImportFile, self.hash, target_file)
 
                                 binaryTag = modSwf.importBinaryFile(os.path.join(path, file))
-                                self.files[GetElementId(binaryTag)] = file
-
+                                self.files[GetElementId(binaryTag)] = target_file
                             else:
-                                #print("Error: Unknown file:", file)
                                 # Skip language .bin files silently — handled by lang branch
                                 if not file.lower().endswith(".bin"):
                                     SendNotification(NotificationType.CompileModSourcesUnknownFile, self.hash, file)

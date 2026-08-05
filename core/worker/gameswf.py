@@ -331,7 +331,13 @@ GAME_SWFS: Dict[str, GameSwf] = {}
 
 
 def GetGameFileClass(gameFileName: str) -> Union[GameSwf, None]:
-    return GAME_SWFS.get(gameFileName, None)
+    if gameFileName in GAME_SWFS:
+        return GAME_SWFS[gameFileName]
+    fn_lower = gameFileName.lower()
+    for k, v in GAME_SWFS.items():
+        if k.lower() == fn_lower:
+            return v
+    return None
 
 
 for _fileName, _filePath in BRAWLHALLA_SWFS.items():
