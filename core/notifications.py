@@ -13,6 +13,7 @@ class NotificationType(Enum):
     # Compile
     CompileModSources = auto()
     CompileModSourcesImportActionScripts = auto()
+    CompileModSourcesImportObfMappings = auto()
     CompileModSourcesImportSound = auto()
     CompileModSourcesImportSprite = auto()
     CompileModSourcesImportPreview = auto()
@@ -47,6 +48,7 @@ class NotificationType(Enum):
     ForceInstallation = auto()
     InstallingModSwf = auto()
     InstallingModSwfScript = auto()
+    InstallingModSwfObfMappings = auto()
     InstallingModSwfSound = auto()
     InstallingModSwfSprite = auto()
     InstallingModFile = auto()

@@ -1,0 +1,113 @@
+{
+  "meta": {
+    "game_version": "auto",
+    "air_swf_mtime": 1788385407.1635575,
+    "air_swf_hash": "95e215d53ade2d12",
+    "updated_at": "2026-09-16",
+    "updated_time": "01:38:16",
+    "last_source": "Action:InstallMod"
+  },
+  "hands_and_costumes": {
+    "costume_type_class": "CostumeType",
+    "costume_reg_prop": "_-K2u",
+    "costume_reg_fallbacks": [
+      "_-K2u",
+      "_-22J",
+      "_-q5b",
+      "_-M6b",
+      "_-X4Q",
+      "_-P1I"
+    ],
+    "gfx_prop": "_-P3J",
+    "gfx_fallbacks": [
+      "_-P3J",
+      "_-v1x",
+      "_-X64",
+      "_-gK",
+      "_-k3B",
+      "_-l45",
+      "_-g1v",
+      "_-bC"
+    ],
+    "art_suffix_prop": "_-O3M",
+    "art_suffix_fallbacks": [
+      "_-O3M",
+      "_-Qe",
+      "_-K3w"
+    ]
+  },
+  "color_schemes": {
+    "cs_class_name": "_-G5Q",
+    "cs_class_fallbacks": [
+      "_-G5Q",
+      "_-V4w",
+      "_-W3s",
+      "ColorSchemeType"
+    ],
+    "cs_reg_prop": "_-44k",
+    "cs_reg_fallbacks": [
+      "_-44k",
+      "_-04k",
+      "_-S6b",
+      "_-p5j",
+      "_-Q4s",
+      "_-S1l",
+      "_-V1h",
+      "_-Q6c",
+      "_-o17",
+      "_-w5Q",
+      "_-31J",
+      "_-E3A"
+    ],
+    "cs_colors_prop": "_-6y",
+    "cs_colors_fallbacks": [
+      "_-6y",
+      "_-S5J",
+      "_-I4B",
+      "_-Z1S"
+    ],
+    "cs_id_field": "_-C5B",
+    "cs_id_fallbacks": [
+      "_-C5B",
+      "_-g1E",
+      "_-9U"
+    ],
+    "cs_slot_methods": [
+      "_-p3",
+      "§_-p3§",
+      "_-r5g"
+    ]
+  },
+  "game_controller_and_entities": {
+    "gc_prop": "_-13t",
+    "gc_entities_prop": "_-j5V",
+    "gc_fallbacks": [
+      "_-13t",
+      "_-84x",
+      "_-819",
+      "_-o4J",
+      "_-t5r"
+    ],
+    "entity_scheme_props": [
+      "_-j5V",
+      "_-S1y"
+    ],
+    "entity_costume_props": [
+      "_-m6",
+      "_-V5k"
+    ]
+  },
+  "legacy_flat_mapping": {
+    "costume_reg_prop": "_-K2u",
+    "gfx_prop": "_-P3J",
+    "art_suffix_prop": "_-O3M",
+    "cs_class_name": "_-G5Q",
+    "cs_reg_prop": "_-44k",
+    "cs_colors_prop": "_-6y",
+    "gc_prop": "_-13t",
+    "gc_entities_prop": "_-j5V",
+    "brawlhalla_version": "auto",
+    "updated_at": "2026-09-16",
+    "updated_time": "01:38:16"
+  }
+}

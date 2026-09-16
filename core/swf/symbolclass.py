@@ -10,10 +10,27 @@ class SymbolClass:
     def __init__(self, symbolClassTag=None):
         self.symbolClass = symbolClassTag
         self._tags = {}
+        self._name_to_tag = {}
 
         if self.symbolClass is not None:
             for n, tag in enumerate(self.symbolClass.tags):
-                self._tags[int(tag)] = self._decodeData(str(self.symbolClass.names[n]))
+                tag_id = int(tag)
+                name = self._decodeData(str(self.symbolClass.names[n]))
+                self._tags[tag_id] = name
+                self._indexName(name, tag_id)
+
+    def _indexName(self, name, tag):
+        try:
+            self._name_to_tag[name] = int(tag)
+        except TypeError:
+            pass
+
+    def _unindexName(self, name, tag):
+        try:
+            if self._name_to_tag.get(name) == int(tag):
+                self._name_to_tag.pop(name, None)
+        except TypeError:
+            pass
 
     def __contains__(self, item):
         return item in self._tags
@@ -42,12 +59,17 @@ class SymbolClass:
     def addTag(self, tag: int, name: object) -> None:
         #if tag in self._tags:
         #    raise SymbolClassTagAlreadyExist("This tag already exists")
-        self._tags[int(tag)] = name
+        tag = int(tag)
+        old_name = self._tags.get(tag)
+        if old_name is not None:
+            self._unindexName(old_name, tag)
+        self._tags[tag] = name
+        self._indexName(name, tag)
 
     def setTag(self, tag: int, name: object) -> None:
         #if tag not in self._tags:
         #    raise SymbolClassTagDoesNotExist("This tag does not exist")
-        self._tags[int(tag)] = name
+        self.addTag(tag, name)
 
     def getTag(self, tag: int, default=None) -> object:
         if tag not in self._tags:
@@ -56,9 +78,15 @@ class SymbolClass:
         return self._tags.get(int(tag))
 
     def removeTag(self, tag: int):
-        self._tags.pop(int(tag))
+        tag = int(tag)
+        name = self._tags.pop(tag)
+        self._unindexName(name, tag)
 
     def getTagByName(self, name: object) -> int:
+        try:
+            return self._name_to_tag.get(name)
+        except TypeError:
+            pass
         for tag, name_ in self._tags.items():
             if name_ == name:
                 return tag

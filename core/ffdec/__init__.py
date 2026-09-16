@@ -1,17 +1,33 @@
 import os
 import sys
+import shutil
 import jpype
 
 __all__ = []
 
 def get_resource_path(filename):
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        # In PyInstaller bundle, __file__ is relative to _MEIPASS or absolute
-        _base = os.path.dirname(__file__)
-        if not os.path.isabs(_base):
-            return os.path.join(sys._MEIPASS, _base, filename)
-        return os.path.join(_base, filename)
-    # In development
+    # 1. Check direct relative to __file__
+    try:
+        p = os.path.abspath(os.path.join(os.path.dirname(__file__), filename))
+        if os.path.exists(p):
+            return p
+    except Exception:
+        pass
+
+    # 2. Check standard frozen and standalone runtime bases
+    bases = [
+        getattr(sys, '_MEIPASS', None),
+        os.path.dirname(sys.executable),
+        os.path.abspath("."),
+    ]
+    for base in bases:
+        if base:
+            for sub in ["", "core/ffdec", "core\\ffdec", "core", "assets"]:
+                p = os.path.abspath(os.path.join(base, sub, filename))
+                if os.path.exists(p):
+                    return p
+
+    # Fallback
     return os.path.abspath(os.path.join(os.path.dirname(__file__), filename))
 
 PLAYERGLOBAL = get_resource_path("playerglobal32_0.swc")
@@ -41,9 +57,10 @@ if sys.platform.startswith("win"):
                 if os.path.exists(p):
                     return p
 
-        # 2. Try jpype's default JVM path finder (verify 64-bit vs 32-bit)
+        # 2. Ask JPype through its public API. This is the most reliable path
+        # for vendor-specific registry keys used by Temurin, Oracle and JDKs.
         try:
-            default_path = jpype._jvmfinder.getDefaultJVMPath()
+            default_path = jpype.getDefaultJVMPath()
             if default_path and os.path.exists(default_path):
                 is_64bit_python = sys.maxsize > 2**31
                 is_32bit_path = "x86" in default_path.lower()
@@ -52,7 +69,47 @@ if sys.platform.startswith("win"):
         except Exception:
             pass
 
-        # 3. Search common 64-bit Java installation directories
+        # 2b. java.exe may be available even when JAVA_HOME is not set.
+        java_exe = shutil.which("java")
+        if java_exe:
+            java_home = os.path.dirname(os.path.dirname(os.path.abspath(java_exe)))
+            for sub in [os.path.join("bin", "server", "jvm.dll"),
+                        os.path.join("jre", "bin", "server", "jvm.dll")]:
+                candidate = os.path.join(java_home, sub)
+                if os.path.exists(candidate):
+                    return candidate
+
+        # 3. Check Windows Registry for JavaHome
+        try:
+            import winreg
+            for root_key in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+                for reg_path in [
+                    r"SOFTWARE\JavaSoft\Java Runtime Environment",
+                    r"SOFTWARE\JavaSoft\JRE",
+                    r"SOFTWARE\JavaSoft\Java Development Kit",
+                    r"SOFTWARE\JavaSoft\JDK",
+                ]:
+                    try:
+                        with winreg.OpenKey(root_key, reg_path, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as k:
+                            cur_ver, _ = winreg.QueryValueEx(k, "CurrentVersion")
+                            with winreg.OpenKey(k, cur_ver) as vk:
+                                reg_java_home, _ = winreg.QueryValueEx(vk, "JavaHome")
+                                if reg_java_home and os.path.exists(reg_java_home):
+                                    for sub in [
+                                        os.path.join("bin", "server", "jvm.dll"),
+                                        os.path.join("bin", "client", "jvm.dll"),
+                                        os.path.join("jre", "bin", "server", "jvm.dll"),
+                                        os.path.join("bin", "default", "jvm.dll"),
+                                    ]:
+                                        p = os.path.join(reg_java_home, sub)
+                                        if os.path.exists(p):
+                                            return p
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 4. Search common 64-bit Java installation directories
         candidates = []
         pf = os.getenv("ProgramFiles", "C:\\Program Files")
         java_dir = os.path.join(pf, "Java")
@@ -78,6 +135,7 @@ if sys.platform.startswith("win"):
                 if os.path.exists(p):
                     return p
         return None
+
 
     jvmpath = find_jvm_dll()
 
@@ -118,10 +176,10 @@ elif sys.platform == "darwin":
 else:
     pass
 
-if jvmpath is None:
-    raise ImportError("Java not found!")
-
-jpype.startJVM(jvmpath, "-Xmx2048m", "-Xms32m", "-XX:+UseSerialGC", classpath=[FFDEC_LIB, CMYKJPEG_LIB, JL_LIB])
+if not jpype.isJVMStarted():
+    if jvmpath is None:
+        raise ImportError("Java not found!")
+    jpype.startJVM(jvmpath, "-Xmx2048m", "-Xms32m", "-XX:+UseSerialGC", classpath=[FFDEC_LIB, CMYKJPEG_LIB, JL_LIB])
 
 
 

@@ -24,6 +24,14 @@ class ModLoaderClass:
 
         self.modsHashSumCache = ModsHashSumCache(self.modsCachePath)
 
+        # Auto-update obfuscation symbols on ModLoader startup
+        try:
+            from ..utils.symbols_manager import resolve_and_update_symbols
+            import threading
+            threading.Thread(target=resolve_and_update_symbols, kwargs={"force": False, "trigger": "Startup"}, daemon=True).start()
+        except Exception:
+            pass
+
     def reload(self):
         self.reloadMods()
         self.reloadModsSources()
@@ -53,16 +61,34 @@ class ModLoaderClass:
                 "date": mod.date,
                 "swfNames": swf_names,
                 "fileNames": file_names,
-                "spriteNames": sprite_names
+                "spriteNames": sprite_names,
+                "swfs": getattr(mod, 'swfs', {}) or {}
             })
             result.append(d)
         return result
 
     def getModsSourcesData(self):
-        return [{**modSources.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"]),
-                 "previewsPaths": modSources.getPreviewsPaths(), "currentGameVersion": self.config.brawlhallaVersion,
-                 "modSourcesPath": modSources.modSourcesPath, "date": modSources.date}
-                for modSources in self.modsSources]
+        result = []
+        for modSources in self.modsSources:
+            data = modSources.getDict(
+                ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"])
+            swfs = getattr(modSources, "swfs", {}) or {}
+            sprite_names = [
+                sprite
+                for swf_data in swfs.values() if isinstance(swf_data, dict)
+                for sprite in (swf_data.get("sprites", []) or [])
+            ]
+            data.update({
+                "previewsPaths": modSources.getPreviewsPaths(),
+                "currentGameVersion": self.config.brawlhallaVersion,
+                "modSourcesPath": modSources.modSourcesPath,
+                "date": modSources.date,
+                "swfNames": list(swfs.keys()),
+                "spriteNames": sprite_names,
+                "swfs": swfs
+            })
+            result.append(data)
+        return result
 
     def loadMods(self):
         modsHashes = []
@@ -113,17 +139,18 @@ class ModLoaderClass:
     def loadModsSources(self):
         modsSourcesHashes = []
         if MODS_SOURCES_PATH:
-            modsSourcesPath = MODS_SOURCES_PATH[0]
-            CheckExists(modsSourcesPath, True)
+            basePath = MODS_SOURCES_PATH[0]
+            CheckExists(basePath, True)
 
-            for modSourcesFolder in os.listdir(modsSourcesPath):
-                modSourcesPath = os.path.join(modsSourcesPath, modSourcesFolder)
-                if os.path.isdir(modSourcesPath) and not modSourcesFolder.startswith("__"):
-                    modSource = ModSource(modSourcesPath)
+            for modSourcesFolder in os.listdir(basePath):
+                folderPath = os.path.join(basePath, modSourcesFolder)
+                if os.path.isdir(folderPath) and not modSourcesFolder.startswith("__"):
+                    modSource = ModSource(folderPath)
                     # Not load duplicate
                     if modSource.hash not in modsSourcesHashes:
                         modsSourcesHashes.append(modSource.hash)
                         self.modsSources.append(modSource)
+
 
     def reloadModsSources(self):
         self.modsSources: List[ModSource] = []

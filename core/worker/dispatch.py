@@ -71,6 +71,11 @@ class Dispatch(BaseDispatch):
 
     @Index(Environment.InstallMod)
     def installMod(self, hash):
+        try:
+            from ..utils.symbols_manager import resolve_and_update_symbols
+            resolve_and_update_symbols(force=False, trigger="Action:InstallMod")
+        except Exception:
+            pass
         mod = ModLoader.getModByHash(hash) or ModLoader.getModSourcesByHash(hash)
         if mod is not None:
             if hasattr(mod, "install"):
@@ -86,6 +91,11 @@ class Dispatch(BaseDispatch):
 
     @Index(Environment.ForceInstallMod)
     def forceInstallMod(self, hash):
+        try:
+            from ..utils.symbols_manager import resolve_and_update_symbols
+            resolve_and_update_symbols(force=False, trigger="Action:ForceInstallMod")
+        except Exception:
+            pass
         mod = ModLoader.getModByHash(hash) or ModLoader.getModSourcesByHash(hash)
         if mod is not None:
             if hasattr(mod, "install"):
@@ -100,6 +110,11 @@ class Dispatch(BaseDispatch):
 
     @Index(Environment.UninstallMod)
     def uninstallMod(self, hash):
+        try:
+            from ..utils.symbols_manager import resolve_and_update_symbols
+            resolve_and_update_symbols(force=False, trigger="Action:UninstallMod")
+        except Exception:
+            pass
         mod = ModLoader.getModByHash(hash) or ModLoader.getModSourcesByHash(hash)
         if mod is not None:
             if hasattr(mod, "uninstall"):
@@ -127,6 +142,11 @@ class Dispatch(BaseDispatch):
 
     @Index(Environment.ReinstallMod)
     def reinstallMod(self, hash):
+        try:
+            from ..utils.symbols_manager import resolve_and_update_symbols
+            resolve_and_update_symbols(force=False, trigger="Action:ReinstallMod")
+        except Exception:
+            pass
         mod = ModLoader.getModByHash(hash)
         if mod is not None:
             threading.Thread(target=mod.reinstall).start()
@@ -218,6 +238,11 @@ class Dispatch(BaseDispatch):
 
     @Index(Environment.CompileModSources)
     def compileModSources(self, hash):
+        try:
+            from ..utils.symbols_manager import resolve_and_update_symbols
+            resolve_and_update_symbols(force=False, trigger="Action:CompileModSources")
+        except Exception:
+            pass
         modSources = ModLoader.getModSourcesByHash(hash)
         if modSources is not None:
             threading.Thread(target=modSources.compile).start()

@@ -99,10 +99,23 @@ class DataClass(metaclass=DataMetaclass):
                         break
 
                     if type_ := getattr(baseClass, "__annotations__", {}).get(varName, None):
-                        if getattr(type_, "__origin__", None) in (dict,):
+                        if var is None:
+                            if type_ in (dict, list, str):
+                                var = type_()
+                            elif type_ == int:
+                                var = 0
+                            elif type_ == bool:
+                                var = False
+                            elif getattr(type_, "__origin__", None) in (dict, list):
+                                var = getattr(type_, "__origin__")()
+                            break
+                        elif getattr(type_, "__origin__", None) in (dict,):
                             if type_.__args__[0] == int:
                                 var = {int(k): v for k, v in var.items()}
                             break
+
+                if var is None:
+                    var = getattr(self, varName, None)
 
                 setattr(self, varName, var)
 

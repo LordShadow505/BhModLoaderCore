@@ -10,6 +10,10 @@ class ModDataSwfsTyped(TypedDict):
     scripts: Dict[str, str]
     sounds: List[str]
     sprites: List[str]
+    # Maps scriptAnchor → if-block string extracted from getHandForCostume().
+    # Used for merging multiple hand-mods that modify the same Obf script in UI_MainMenu.swf
+    # instead of full replacement. Format: {"tier_b/Obf": "if (...) { return ...; }\n   "}
+    obfMappings: Dict[str, str]
 
 
 class ModDataTyped(MetadataTyped):

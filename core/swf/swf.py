@@ -251,7 +251,10 @@ class Swf:
 
         self._swf = None
         self.elementsList = []
-        # self.elementsMap = {}
+        self._elementsById = {}
+        self._nextCharacterId = None
+        self._bulkAddActive = False
+        self._bulkTagList = None
         # self.elementsMapByType = {}
         self.symbolClass: SymbolClass = None
         self.metaData: MetadataClass = None
@@ -331,6 +334,11 @@ class Swf:
 
     def load(self):
         if self._swf is not None:
+            self.elementsList = []
+            self._elementsById = {}
+            self._nextCharacterId = None
+            self._bulkAddActive = False
+            self._bulkTagList = None
             for element in self._swf.getTags():
                 elType = type(element)
                 elId = None
@@ -344,7 +352,7 @@ class Swf:
 
                 if elId is not None:
                     self.elementsList.append(element)
-                    # self.elementsMap[element] = elId
+                    self._elementsById.setdefault(elId, []).append(element)
 
                     # if elType not in self.elementsMapByType:
                     #    self.elementsMapByType[elType] = {}
@@ -357,6 +365,7 @@ class Swf:
 
     def save(self):
         if self._swf is not None:
+            self.finishBulkAdd()
             if self.symbolClass is not None:
                 self.symbolClass.save()
             if self.metaData is not None:
@@ -365,17 +374,21 @@ class Swf:
             self._swf.saveTo(fileStream)
             fileStream.close()
 
-    def close(self):
+    def close(self, clearGlobalCaches=True):
         if self._swf is not None:
-            self._javaSwfs.pop(self._swf)
+            self._javaSwfs.pop(self._swf, None)
             self._swf.clearTagSwfs()
-            try:
-                self._swf.clearAllCache()
-            except:
-                pass
+            if clearGlobalCaches:
+                try:
+                    self._swf.clearAllCache()
+                except:
+                    pass
             self._swf = None
             self.elementsList = []
-            # self.elementsMap = {}
+            self._elementsById = {}
+            self._nextCharacterId = None
+            self._bulkAddActive = False
+            self._bulkTagList = None
             # self.elementsMapByType = {}
             self.metaData = None
             self.symbolClass = None
@@ -386,47 +399,112 @@ class Swf:
         self.metaData: MetadataClass = MetadataClass(metadata)
 
     def getElementById(self, elId: int, elType=None):
-        elements = []
-        for element in self.elementsList:
-            if GetElementId(element) == elId and (True if elType is None else isinstance(element, elType)):
-                elements.append(element)
-
-        return elements
+        elements = self._elementsById.get(int(elId), [])
+        if elType is None:
+            return list(elements)
+        return [element for element in elements if isinstance(element, elType)]
 
     def getNextCharacterId(self):
-        return int(self._swf.getNextCharacterId())
+        # FFDec rebuilds/scans its character map in getNextCharacterId().
+        # Keep the same max-id + 1 policy, but cross into Java only once per
+        # opened SWF. addElement() advances this value in O(1).
+        if self._nextCharacterId is None:
+            self._nextCharacterId = int(self._swf.getNextCharacterId())
+        return self._nextCharacterId
+
+    def beginBulkAdd(self):
+        """Append tags without FFDec rebuilding its full index after each tag.
+
+        The bundled FFDec addTag() calls updateCharacters() every time, which
+        makes a large, from-scratch build quadratic.  Reflection is isolated
+        here and has a transparent compatibility fallback for a future FFDec
+        whose internal field changes.
+        """
+        if self._bulkAddActive:
+            return True
+
+        # Freeze FFDec's next ID before its Java-side character map becomes
+        # intentionally stale during the batch.
+        self.getNextCharacterId()
+        try:
+            tagsField = self._swf.getClass().getDeclaredField("tags")
+            tagsField.setAccessible(True)
+            self._bulkTagList = tagsField.get(self._swf)
+            self._bulkAddActive = self._bulkTagList is not None
+        except Exception:
+            self._bulkTagList = None
+            self._bulkAddActive = False
+        return self._bulkAddActive
+
+    def finishBulkAdd(self):
+        """Rebuild FFDec's Java indexes once after a bulk append."""
+        if not self._bulkAddActive:
+            return
+        try:
+            self._swf.setModified(True)
+            self._swf.updateCharacters()
+        finally:
+            self._bulkAddActive = False
+            self._bulkTagList = None
 
     @property
     def AS3Packs(self):
         return self._swf.getAS3Packs()
 
+    @staticmethod
+    def _normPackName(name: str) -> str:
+        """Normalize a script-pack name so that dot and slash separators are
+        treated as equivalent when matching.  FFDec stores package paths with
+        '.' (e.g. 'tier_b.BrawlForgeSuite') while the mod-source directory
+        structure produces '/' separators (e.g. 'tier_b/BrawlForgeSuite').
+        Both are converted to dot-notation for comparison."""
+        return name.replace("/", ".").replace("\\", ".")
+
     def getAS3(self, scriptName: str):
+        target = self._normPackName(scriptName)
         for pack in self.AS3Packs:
-            if str(pack) != scriptName: continue
+            pack_path = self._normPackName(str(pack.getPath()) if hasattr(pack, "getPath") else str(pack))
+            pack_name = self._normPackName(str(pack))
+            if target != pack_path and target != pack_name and target != (pack_path.split(".")[-1] if "." in pack_path else ""):
+                continue
             return str(self._swf.getCached(pack).text)
 
         return None
 
     def setAS3(self, scriptName: str, as3: str):
+        target = self._normPackName(scriptName)
         for pack in self.AS3Packs:
-            if str(pack) != scriptName: continue
-            scriptReplacer = As3ScriptReplacerFactory.createByConfig()
+            pack_path = self._normPackName(str(pack.getPath()) if hasattr(pack, "getPath") else str(pack))
+            pack_name = self._normPackName(str(pack))
+            if target != pack_path and target != pack_name and target != (pack_path.split(".")[-1] if "." in pack_path else ""):
+                continue
+            try:
+                scriptReplacer = As3ScriptReplacerFactory.createByConfig(True)
+            except Exception:
+                scriptReplacer = As3ScriptReplacerFactory.createByConfig()
             pack.abc.replaceScriptPack(scriptReplacer, pack, as3)
             return True
 
         return False
 
     def addElement(self, element, elId=None):
-        self._swf.addTag(element)
-
         if elId is not None:
             SetElementId(element, elId)
+
+        if self._bulkAddActive:
+            self._bulkTagList.add(element)
+        else:
+            self._swf.addTag(element)
 
         # elId = GetElementId(element)
         # elType = ElementAnyToObject(element)
 
         self.elementsList.append(element)
-        # self.elementsMap[element] = elId
+        element_id = GetElementId(element)
+        if element_id is not None:
+            self._elementsById.setdefault(element_id, []).append(element)
+            if self._nextCharacterId is not None and element_id >= self._nextCharacterId:
+                self._nextCharacterId = element_id + 1
         # if elType not in self.elementsMapByType:
         #    self.elementsMapByType[elType] = {}
         # self.elementsMapByType[elType][elId] = element
@@ -439,17 +517,38 @@ class Swf:
         return self.addElement(element.cloneTag(), elId)
 
     def replaceElement(self, oldElement, newElement):
+        self.finishBulkAdd()
         self._swf.replaceTag(oldElement, newElement)
+        old_id = GetElementId(oldElement)
+        new_id = GetElementId(newElement)
+        if oldElement in self.elementsList:
+            self.elementsList[self.elementsList.index(oldElement)] = newElement
+        if old_id is not None:
+            indexed = self._elementsById.get(old_id, [])
+            if oldElement in indexed:
+                indexed.remove(oldElement)
+            if not indexed:
+                self._elementsById.pop(old_id, None)
+        if new_id is not None:
+            self._elementsById.setdefault(new_id, []).append(newElement)
+            if self._nextCharacterId is not None and new_id >= self._nextCharacterId:
+                self._nextCharacterId = new_id + 1
 
     def removeElement(self, element):
-        # elId = GetElementId(element)
+        self.finishBulkAdd()
+        elId = GetElementId(element)
         # elType = ElementAnyToObject(element)
 
         self._swf.removeTag(element)
 
         if element in self.elementsList:
             self.elementsList.remove(element)
-        # self.elementsMap.pop(element)
+        if elId is not None:
+            indexed = self._elementsById.get(elId, [])
+            if element in indexed:
+                indexed.remove(element)
+            if not indexed:
+                self._elementsById.pop(elId, None)
         # self.elementsMapByType[elType].pop(elId)
 
     def replaceFont(self, oldFont, newFont):

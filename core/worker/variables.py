@@ -24,12 +24,16 @@ DATA_FORMAT_MODLOADER_FILES = "modloader_files"
 
 MODS_SOURCES_CACHE_FILE = "_cache.json"
 MODS_SOURCES_CACHE_PREVIEW = "_previews"
+# Revision 2 stores a cheap directory stamp.  It lets normal source loads use
+# their cached sprite inventory without walking every source file again.
+MODS_SOURCES_CACHE_REVISION = 2
 
 
 MODLOADER_CACHE_CORE_FILE = "core.json"
 MODLOADER_CACHE_FILES_FILE = "files.json"
 MODLOADER_CACHE_FILES_FOLDER = "OriginalFiles"
 MODLOADER_CACHE_MODS_FOLDER = "Mods"
+MODLOADER_MOD_CACHE_REVISION = 1
 
 MODLOADER_CACHE_FOLDER = "BModloader"
 if sys.platform in ["win32", "win64"]:
@@ -64,4 +68,3 @@ def SetModsSourcesPath(path):
     MODS_SOURCES_PATH.append(path)
 
     CheckExists(path, True)
-
