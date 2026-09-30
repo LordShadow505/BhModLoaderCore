@@ -11,7 +11,8 @@ def RandomHash() -> str:
 
 
 def HashFile(path: str) -> str:
+    hash_ = hashlib.sha256()
     with open(path, "rb") as file:
-        hash_ = HashFromBytes(file.read())
-
-    return hash_
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            hash_.update(chunk)
+    return hash_.hexdigest()

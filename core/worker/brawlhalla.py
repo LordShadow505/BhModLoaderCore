@@ -24,8 +24,14 @@ if sys.platform in ["win32", "win64"]:
     brawlhallaFolders = []
     steamHomePath = ""
 
-    # Try custom path first
-    if ModloaderCoreConfig.customBrawlhallaPath:
+    # The UI passes a session-only custom path before spawning the worker.
+    # This avoids starting FFDec/JVM in the UI just to mutate worker config.
+    session_path = os.environ.get("BMODS_BRAWLHALLA_PATH", "")
+    if session_path and os.path.exists(session_path):
+        BRAWLHALLA_PATH = session_path
+
+    # Try persisted custom path next.
+    if BRAWLHALLA_PATH is None and ModloaderCoreConfig.customBrawlhallaPath:
         if os.path.exists(ModloaderCoreConfig.customBrawlhallaPath):
             BRAWLHALLA_PATH = ModloaderCoreConfig.customBrawlhallaPath
 

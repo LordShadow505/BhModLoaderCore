@@ -1,4 +1,5 @@
 import os
+import traceback
 from typing import List, Union
 
 from .variables import (MODS_PATH,
@@ -9,6 +10,8 @@ from .variables import (MODS_PATH,
                         CheckExists)
 from .mod import ModClass, ModSource, ModsHashSumCache
 from .config import ModloaderCoreConfig
+from .basedispatch import SendNotification
+from ..notifications import NotificationType
 
 
 class ModLoaderClass:
@@ -41,30 +44,65 @@ class ModLoaderClass:
         self.modsClasses = []
         self.modsGhosts = []
 
+    @staticmethod
+    def _getListingSwfs(swfs):
+        """Return the small SWF inventory the UI needs to render a mod card.
+
+        Passing compiled ActionScript source through the controller queue makes
+        Loader startup depend on the largest installed mod.  The UI only uses
+        the SWF and anchor names, so deliberately omit script bodies here.
+        """
+        listing_swfs = {}
+        if not isinstance(swfs, dict):
+            return listing_swfs
+
+        for swf_name, swf_data in swfs.items():
+            if not isinstance(swf_data, dict):
+                continue
+            scripts = swf_data.get("scripts", {})
+            listing_swfs[swf_name] = {
+                "scripts": {
+                    anchor: "" for anchor in scripts
+                } if isinstance(scripts, dict) else {},
+                "sounds": list(swf_data.get("sounds", []) or []),
+                "sprites": list(swf_data.get("sprites", []) or []),
+            }
+        return listing_swfs
+
     def getModsData(self):
         result = []
         for mod in self.modsClasses:
-            d = mod.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"])
-            swf_names = list(mod.swfs.keys()) if hasattr(mod, 'swfs') and mod.swfs else []
-            file_names = list(mod.files.values()) if hasattr(mod, 'files') and mod.files else []
-            
-            sprite_names = []
-            if hasattr(mod, 'swfs') and mod.swfs:
-                for swf_data in mod.swfs.values():
-                    if isinstance(swf_data, dict) and "sprites" in swf_data:
-                        sprite_names.extend(swf_data["sprites"])
+            try:
+                d = mod.getDict(ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"])
+                swf_names = list(mod.swfs.keys()) if hasattr(mod, 'swfs') and mod.swfs else []
+                file_names = list(mod.files.values()) if hasattr(mod, 'files') and mod.files else []
+                listing_swfs = self._getListingSwfs(getattr(mod, 'swfs', {}) or {})
 
-            d.update({
-                "modPath": getattr(mod, 'modPath', ""),
-                "previewsPaths": mod.getPreviewsPaths(),
-                "currentGameVersion": self.config.brawlhallaVersion,
-                "date": mod.date,
-                "swfNames": swf_names,
-                "fileNames": file_names,
-                "spriteNames": sprite_names,
-                "swfs": getattr(mod, 'swfs', {}) or {}
-            })
-            result.append(d)
+                sprite_names = []
+                if hasattr(mod, 'swfs') and mod.swfs:
+                    for swf_data in mod.swfs.values():
+                        if isinstance(swf_data, dict) and "sprites" in swf_data:
+                            sprite_names.extend(swf_data["sprites"])
+
+                d.update({
+                    "modPath": getattr(mod, 'modPath', ""),
+                    "previewsPaths": mod.getPreviewsPaths(),
+                    "currentGameVersion": self.config.brawlhallaVersion,
+                    "date": mod.date,
+                    "swfNames": swf_names,
+                    "fileNames": file_names,
+                    "spriteNames": sprite_names,
+                    "swfs": listing_swfs
+                })
+                result.append(d)
+            except Exception as error:
+                mod_path = getattr(mod, "modPath", "")
+                SendNotification(
+                    NotificationType.LoadingModError,
+                    mod_path,
+                    f"{type(error).__name__}: {error}",
+                    traceback.format_exc(),
+                )
         return result
 
     def getModsSourcesData(self):
@@ -73,6 +111,7 @@ class ModLoaderClass:
             data = modSources.getDict(
                 ignoredVars=["swfs", "files", "previewsIds", "formatType", "formatVersion"])
             swfs = getattr(modSources, "swfs", {}) or {}
+            listing_swfs = self._getListingSwfs(swfs)
             sprite_names = [
                 sprite
                 for swf_data in swfs.values() if isinstance(swf_data, dict)
@@ -85,7 +124,7 @@ class ModLoaderClass:
                 "date": modSources.date,
                 "swfNames": list(swfs.keys()),
                 "spriteNames": sprite_names,
-                "swfs": swfs
+                "swfs": listing_swfs
             })
             result.append(data)
         return result
@@ -105,16 +144,26 @@ class ModLoaderClass:
                         if modClass.hash not in modsHashes:
                             modsHashes.append(modClass.hash)
                             self.modsClasses.append(modClass)
-                    except:
-                        pass
+                    except Exception as error:
+                        SendNotification(
+                            NotificationType.LoadingModError,
+                            modPath,
+                            f"{type(error).__name__}: {error}",
+                            traceback.format_exc(),
+                        )
 
         for modHash in self.modsHashSumCache.hashes.values():
             if modHash not in modsHashes:
                 try:
                     modClass = ModClass(modsCachePath=self.modsCachePath, modHash=modHash, sharedHashCache=self.modsHashSumCache)
                     self.modsClasses.append(modClass)
-                except:
-                    pass
+                except Exception as error:
+                    SendNotification(
+                        NotificationType.LoadingModError,
+                        "",
+                        f"Cached mod '{modHash}' could not be loaded: {type(error).__name__}: {error}",
+                        traceback.format_exc(),
+                    )
 
     def reloadMods(self):
         self.modsClasses = []

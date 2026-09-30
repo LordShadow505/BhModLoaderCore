@@ -193,6 +193,20 @@ def resolve_and_update_symbols(brawlhalla_dir: Optional[Union[str, Path]] = None
     air_exists = air_swf.exists()
     air_mtime = air_swf.stat().st_mtime if air_exists else 0.0
 
+    # Startup imports this module in both the UI process and the worker
+    # process.  Re-parsing BrawlhallaAir.swf in both places, even when Steam
+    # has not changed the file, can saturate the CPU while the mod list is
+    # loading.  The persisted mtime is the cache key used by the resolver, so
+    # an unchanged file can return immediately.  Manual repair passes
+    # force=True and still performs a complete scan.
+    existing_meta = existing.get("meta", {}) if isinstance(existing, dict) else {}
+    try:
+        cached_mtime = float(existing_meta.get("air_swf_mtime", -1))
+    except (TypeError, ValueError):
+        cached_mtime = -1
+    if not force and air_exists and cached_mtime == air_mtime:
+        return existing
+
     # Import resolver lazily
     from .brawlhalla_symbol_resolver import resolve_brawlhalla_symbols
     raw_symbols = resolve_brawlhalla_symbols(brawlhalla_dir)

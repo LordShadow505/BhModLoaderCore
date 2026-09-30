@@ -20,8 +20,7 @@ from .variables import (MODS_PATH,
                         METADATA_CACHE_MOD_FILE,
                         MODS_SOURCES_CACHE_FILE,
                         MODS_SOURCES_CACHE_PREVIEW,
-                        MODS_SOURCES_CACHE_REVISION,
-                        MODLOADER_MOD_CACHE_REVISION)
+                        MODS_SOURCES_CACHE_REVISION)
 from .dataversion import DataClass, DataVariable
 from .gameswf import GetGameFileClass, _OBF_ANCHOR, _OBF_SCRIPT_TEMPLATE
 from .gamefiles import GameFiles
@@ -29,7 +28,8 @@ from .brawlhalla import BRAWLHALLA_SWFS, BRAWLHALLA_FILES, BRAWLHALLA_VERSION
 from .basedispatch import SendNotification
 from ..notifications import NotificationType
 
-from ..utils.hash import RandomHash, HashFile
+from ..utils.hash import RandomHash
+from ..swf.metadatareader import read_swf_metadata
 
 from ..swf.swf import (Swf, GetElementId, SetElementId, GetShapeBitmapId,
                        SetShapeBitmapId, GetNeededCharactersId)
@@ -1131,29 +1131,51 @@ class ModCache(BaseModClass):
     DataVariable(METADATA_FORMAT_CACHE_MOD, 1, "modFileExist")
     modFileExist: bool = True
 
-    DataVariable(METADATA_FORMAT_CACHE_MOD, 2, "cacheRevision")
-    # Zero marks caches written before explicit cache versioning.
-    cacheRevision: int = 0
-
     modCachePath: str
 
-    def isCacheCurrent(self):
+    def readCacheData(self):
         if not self.modCachePath:
-            return False
+            return None
         cache_path = os.path.join(self.modCachePath, METADATA_CACHE_MOD_FILE)
         try:
             with open(cache_path, "r", encoding="utf-8") as cache_file:
-                data = json.load(cache_file)
-            revision = int(data.get("cacheRevision", 0))
-            return (
-                revision >= MODLOADER_MOD_CACHE_REVISION and
-                isinstance(data.get("hash"), str) and bool(data["hash"]) and
-                isinstance(data.get("swfs"), dict) and
-                isinstance(data.get("files"), dict) and
-                isinstance(data.get("previewsIds"), dict)
-            )
-        except (OSError, ValueError, TypeError, KeyError):
-            return False
+                return json.load(cache_file)
+        except (OSError, ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def getCacheState(data, expectedHash=None, expectedHashSum=None):
+        """Validate cached metadata without requiring a cache migration."""
+        if not isinstance(data, dict):
+            return "invalid"
+
+        try:
+            format_version = int(data.get("formatVersion", 0))
+        except (ValueError, TypeError):
+            return "invalid"
+
+        cache_hash = data.get("hash")
+        cache_hash_sum = data.get("hashSum")
+        structurally_valid = (
+            data.get("formatType") == METADATA_FORMAT_CACHE_MOD and
+            0 <= format_version <= METADATA_FORMAT_VERSION and
+            isinstance(cache_hash, str) and bool(cache_hash) and
+            isinstance(data.get("swfs"), dict) and
+            isinstance(data.get("files"), dict) and
+            isinstance(data.get("previewsIds"), dict)
+        )
+        if not structurally_valid:
+            return "invalid"
+        if expectedHash is not None and cache_hash != expectedHash:
+            return "invalid"
+        if expectedHashSum is not None and cache_hash_sum != expectedHashSum:
+            return "invalid"
+        return "current"
+
+    def isCacheCurrent(self, data=None, expectedHash=None, expectedHashSum=None):
+        if data is None:
+            data = self.readCacheData()
+        return self.getCacheState(data, expectedHash, expectedHashSum) == "current"
 
     def loadCache(self, allowedVars=None, ignoredVars=None):
         if self.modCachePath:
@@ -1162,13 +1184,28 @@ class ModCache(BaseModClass):
                               ignoredVars=ignoredVars)
 
     def saveCache(self):
-        if self.modCachePath:
-            self.saveJsonFile(os.path.join(self.modCachePath, METADATA_CACHE_MOD_FILE))
+        """Persist only after an explicit operation on this particular mod."""
+        if not self.modCachePath and self.hash:
+            self.modCachePath = os.path.join(self.modsCachePath, self.hash)
+        if not self.modCachePath:
+            return
+
+        os.makedirs(self.modCachePath, exist_ok=True)
+        if self.hash and self.hashSum:
+            old_hash_sum = self.modsHashSumCache.getHashSum(self.hash)
+            if old_hash_sum != self.hashSum:
+                if old_hash_sum is not None:
+                    self.modsHashSumCache.removeHash(old_hash_sum)
+                self.modsHashSumCache.setHash(self.hashSum, self.hash)
+                self.modsHashSumCache.save()
+        self.saveJsonFile(os.path.join(self.modCachePath, METADATA_CACHE_MOD_FILE))
 
 
 class ModClass(ModCache):
     def __init__(self, modsCachePath: str, modPath: str = None, modHash: str = None, sharedHashCache: ModsHashSumCache = None):
+        self.modsCachePath = modsCachePath
         self.modPath = modPath
+        self.modCachePath = ""
         if sharedHashCache is not None:
             self.modsHashSumCache = sharedHashCache
         else:
@@ -1181,48 +1218,52 @@ class ModClass(ModCache):
             fileStat = os.stat(self.modPath)
             modHashSum = f"{fileStat.st_size}_{fileStat.st_mtime}"
 
-            _cache = False
+            embedded_metadata = None
+            modHash = self.modsHashSumCache.getHash(modHashSum)
+            if modHash is None:
+                # Old loaders could index by a full-file SHA.  Reading the
+                # embedded Metadata tag is much cheaper than hashing the whole
+                # .bmod and lets us locate its existing cache by mod hash.
+                embedded_metadata = read_swf_metadata(self.modPath)
+                embedded_hash = embedded_metadata.get("hash") if isinstance(embedded_metadata, dict) else None
+                if isinstance(embedded_hash, str) and embedded_hash:
+                    candidate_path = os.path.join(modsCachePath, embedded_hash)
+                    if os.path.isdir(candidate_path):
+                        modHash = embedded_hash
 
-            if modHash := self.modsHashSumCache.getHash(modHashSum):
+            if modHash is not None:
                 self.modCachePath = os.path.join(modsCachePath, modHash)
                 if os.path.exists(self.modCachePath):
-                    cache_is_current = self.isCacheCurrent()
-                    self.loadCache(ignoredVars=["modFileExist"])
-                    if not cache_is_current:
-                        installed = self.installed
-                        SendNotification(NotificationType.LoadingMod, modPath)
-                        SendNotification(NotificationType.LoadingModData, modPath)
-                        self.loadModData()
-                        self.installed = installed
-                        self.hashSum = modHashSum
-                        self.cacheRevision = MODLOADER_MOD_CACHE_REVISION
+                    cache_data = self.readCacheData()
+                    cache_state = self.getCacheState(cache_data, modHash)
+                    if cache_state == "current":
+                        self.loadFromJson(dict(cache_data), ignoredVars=["modFileExist"])
                 else:
-                    _cache = True
+                    cache_state = "invalid"
             else:
-                _cache = True
+                cache_state = "invalid"
 
-            if _cache:
-
+            if cache_state != "current":
+                installed = False
+                if self.modCachePath:
+                    old_cache = self.readCacheData()
+                    if isinstance(old_cache, dict):
+                        installed = bool(old_cache.get("installed", False))
                 SendNotification(NotificationType.LoadingMod, modPath)
                 SendNotification(NotificationType.LoadingModData, modPath)
-                self.loadModData()
-
-                self.hashSum = modHashSum
-                self.cacheRevision = MODLOADER_MOD_CACHE_REVISION
-                self.modCachePath = os.path.join(modsCachePath, self.hash)
-
-                if oldHashSum := self.modsHashSumCache.getHashSum(self.hash):
-                    self.modsHashSumCache.removeHash(oldHashSum)
+                if embedded_metadata is not None:
+                    self.loadFromJson(dict(embedded_metadata), ignoredVars=[
+                        "formatType", "hashSum", "installed", "currentVersion", "modFileExist"
+                    ])
                 else:
-                    if not os.path.exists(self.modCachePath):
-                        os.mkdir(self.modCachePath)
+                    self.loadModData()
+                self.installed = installed
+                if self.hash:
+                    self.modCachePath = os.path.join(modsCachePath, self.hash)
 
-                self.cachePreviews()
-
-                self.modsHashSumCache.setHash(modHashSum, self.hash)
-                self.modsHashSumCache.save()
-
-                self.loadCache(allowedVars=["installed"])
+            # Keep the cheap current fingerprint in memory.  It is persisted
+            # only if this exact mod is later installed/uninstalled.
+            self.hashSum = modHashSum
         elif modHash is not None:
             self.modFileExist = False
             self.modSwf = None
@@ -1244,9 +1285,6 @@ class ModClass(ModCache):
         else:
             self.currentVersion = False
 
-        if self.modPath is not None:
-            self.saveCache()
-
     def open(self):
         if self.modSwf is not None:
             self.modSwf.open()
@@ -1262,16 +1300,14 @@ class ModClass(ModCache):
         shutil.rmtree(self.modCachePath)
 
     def loadModData(self):
-        modOpen = self.modSwf.isOpen()
-
-        if not modOpen:
-            self.open()
-
-        self.loadFromJson(self.modSwf.metaData.get(), ignoredVars=["formatType", "hashSum", "installed",
-                                                                   "currentVersion", "modFileExist"])
-
-        if not modOpen:
-            self.close()
+        metadata = read_swf_metadata(self.modPath)
+        if metadata is None:
+            # Startup is a listing operation, not a repair pass.  Opening an
+            # unknown or damaged mod through FFDec here can block the entire
+            # loader indefinitely, so let loadMods skip it quickly instead.
+            raise ValueError(f"Unable to read embedded metadata from '{self.modPath}'")
+        self.loadFromJson(metadata, ignoredVars=["formatType", "hashSum", "installed",
+                                                 "currentVersion", "modFileExist"])
 
     def cachePreviews(self):
         SendNotification(NotificationType.LoadingModCachePreviews, self.hash)
@@ -1338,12 +1374,14 @@ class ModClass(ModCache):
             conflictMods = set(GameFiles.getModConflict(list(self.files.values()), self.hash))
             for swfName, swfMap in self.swfs.items():
                 gameFile = GetGameFileClass(swfName)
-                if gameFile:
-                    gameFile.open()
+                if gameFile is None:
+                    continue
 
-                    SendNotification(NotificationType.ModConflictSearchInSwf, self.hash, swfName)
+                gameFile.open()
 
-                    temp_gameFiles.append(gameFile)
+                SendNotification(NotificationType.ModConflictSearchInSwf, self.hash, swfName)
+
+                temp_gameFiles.append(gameFile)
 
                 for category, anchors in swfMap.items():
                     if category in ("sounds", "sprites", "scripts"):
@@ -1413,16 +1451,17 @@ class ModClass(ModCache):
             for swfName, swfMap in self.swfs.items():
 
                 gameFile = GetGameFileClass(swfName)
-                gameFile.open()
-
                 if gameFile is None:
                     #print(f"Error: Not found swf '{swfName}'!")
                     SendNotification(NotificationType.InstallingModNotFoundGameSwf, self.hash, swfName)
                     continue
 
+                gameFile.open()
+
                 if self.hash in gameFile.installed:
                     #print(f"Mod '{self.name}' in '{swfName}' is already installed")
                     SendNotification(NotificationType.InstallingModInFileAlreadyInstalled, self.hash, swfName)
+                    gameFile.close()
                     continue
                 else:
                     #print(f"Installing '{self.name}' in '{swfName}'")
@@ -1587,7 +1626,13 @@ class ModClass(ModCache):
                     continue
                 gameFile.open()
 
-                gameFile.uninstallMod(self.hash)
+                swfMap = self.swfs.get(swfName, {})
+                expectedAnchors = set(swfMap.get("scripts", {}).keys())
+                expectedAnchors.update(swfMap.get("sounds", []))
+                expectedAnchors.update(swfMap.get("sprites", []))
+                if swfMap.get("obfMappings"):
+                    expectedAnchors.add(_OBF_ANCHOR)
+                gameFile.uninstallMod(self.hash, expectedAnchors)
 
                 gameFile.save()
                 gameFile.close()

@@ -1,5 +1,6 @@
 import os
 import json
+from copy import deepcopy
 from typing import Dict, List, Union
 
 
@@ -43,10 +44,19 @@ class DataMetaclass(type):
             def __init__(self, *args, **kwargs):
                 for cls in self.__class__.__mro__:
                     for varName, annotation in getattr(cls, "__annotations__", {}).items():
-                        if getattr(self, varName, None) is not None:
+                        # Class annotations with ``[]`` or ``{}`` defaults are
+                        # otherwise shared by every instance.  This is especially
+                        # dangerous for GameSwf: state from one game SWF can then
+                        # be saved into another SWF's metadata.
+                        if varName in self.__dict__:
                             continue
 
-                        if annotation in (list, dict, str):
+                        default = cls.__dict__.get(varName, None)
+                        if isinstance(default, (dict, list, set)):
+                            setattr(self, varName, deepcopy(default))
+                        elif default is not None:
+                            setattr(self, varName, default)
+                        elif annotation in (list, dict, str):
                             setattr(self, varName, annotation())
                         elif annotation == int:
                             setattr(self, varName, 0)

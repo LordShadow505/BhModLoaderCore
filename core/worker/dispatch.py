@@ -10,6 +10,11 @@ from ..commands import Environment
 
 
 class Dispatch(BaseDispatch):
+    def __init__(self):
+        super().__init__()
+        self._active_conflict_hashes = set()
+        self._conflict_hashes_lock = threading.Lock()
+
     @Index(Environment.SetModsPath)
     def setModPath(self, path):
         SetModsPath(path)
@@ -62,7 +67,21 @@ class Dispatch(BaseDispatch):
     def getModConflict(self, hash):
         mod = ModLoader.getModByHash(hash)
         if mod is not None:
-            threading.Thread(target=mod.getModConflict).start()
+            with self._conflict_hashes_lock:
+                if hash in self._active_conflict_hashes:
+                    # A second request for the same mod while the first scan
+                    # is running would otherwise emit duplicate dialogs.
+                    return False, None
+                self._active_conflict_hashes.add(hash)
+
+            def search_conflict():
+                try:
+                    mod.getModConflict()
+                finally:
+                    with self._conflict_hashes_lock:
+                        self._active_conflict_hashes.discard(hash)
+
+            threading.Thread(target=search_conflict, daemon=True).start()
             #mod.getModConflict()
 
             return True, hash

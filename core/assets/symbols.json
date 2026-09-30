@@ -1,11 +1,11 @@
 {
   "meta": {
     "game_version": "auto",
-    "air_swf_mtime": 1788385407.1635575,
-    "air_swf_hash": "95e215d53ade2d12",
-    "updated_at": "2026-09-16",
-    "updated_time": "01:38:16",
-    "last_source": "Action:InstallMod"
+    "air_swf_mtime": 1789578791.8966718,
+    "air_swf_hash": "f2144574cecfd32b",
+    "updated_at": "2026-09-17",
+    "updated_time": "09:23:08",
+    "last_source": "Startup"
   },
   "hands_and_costumes": {
     "costume_type_class": "CostumeType",
@@ -107,7 +107,7 @@
     "gc_prop": "_-13t",
     "gc_entities_prop": "_-j5V",
     "brawlhalla_version": "auto",
-    "updated_at": "2026-09-16",
-    "updated_time": "01:38:16"
+    "updated_at": "2026-09-17",
+    "updated_time": "09:23:08"
   }
 }

@@ -638,7 +638,28 @@ class GameSwf(GameSwfData):
         if not fileOpen:
             self.close()
 
-    def uninstallMod(self, modHash: str):
+    def discardStaleModAnchors(self, modHash: str, expectedAnchors=None):
+        """Remove old cross-SWF tracking entries for one mod.
+
+        Older releases accidentally shared GameSwf's mutable metadata between
+        instances.  A source which modifies both ``Gfx_Ahsoka.swf`` and
+        ``Gfx_Ahsoka_Katar.swf`` could therefore save Ahsoka's body anchors in
+        the Katar file.  They are tracking-only entries: the symbol does not
+        exist in that SWF and attempting to restore it merely emits a false
+        "Not found mod element" error.
+        """
+        if expectedAnchors is None:
+            return
+
+        expected = set(expectedAnchors)
+        for anchor, tracked_hash in list(self.modifiedAnchorsMap.items()):
+            if tracked_hash != modHash or anchor in expected:
+                continue
+            self.modifiedAnchorsMap.pop(anchor, None)
+            self.anchors.pop(anchor, None)
+            self.scripts.pop(anchor, None)
+
+    def uninstallMod(self, modHash: str, expectedAnchors=None):
         SendNotification(NotificationType.UninstallingModSwf, modHash, os.path.split(self.gameSwf.swfPath)[1])
 
         fileOpen = self.gameSwf.isOpen()
@@ -654,6 +675,9 @@ class GameSwf(GameSwfData):
         if getattr(self, "anchors", None) is None:
             self.anchors = {}
 
+        self.discardStaleModAnchors(modHash, expectedAnchors)
+        expected = set(expectedAnchors) if expectedAnchors is not None else None
+
         # Remove Obf mapping for this mod and regenerate merged script
         if modHash in self.obfMappings:
             del self.obfMappings[modHash]
@@ -661,6 +685,8 @@ class GameSwf(GameSwfData):
 
         for anchor, _modHash in self.modifiedAnchorsMap.copy().items():
             if _modHash == modHash:
+                if expected is not None and anchor not in expected:
+                    continue
                 # Skip _OBF_ANCHOR — managed dynamically above
                 if anchor == _OBF_ANCHOR:
                     continue
