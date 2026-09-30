@@ -8,7 +8,7 @@ from ..utils.hash import HashFile
 from ..ffdec.classes import ArrayList, Configuration, HighlightedTextWriter, ScriptExportMode
 from ..swf import Swf
 
-__all__ = ["BRAWLHALLA_PATH", "BRAWLHALLA_SWFS", "BRAWLHALLA_FILES", "BRAWLHALLA_LANG_FILES", "BRAWLHALLA_VERSION"]
+__all__ = ["BRAWLHALLA_PATH", "BRAWLHALLA_SWFS", "BRAWLHALLA_FILES", "BRAWLHALLA_LANG_FILES", "BRAWLHALLA_VERSION", "refresh_brawlhalla_file_index"]
 
 
 BRAWLHALLA_PATH = None
@@ -16,6 +16,43 @@ BRAWLHALLA_SWFS = {}
 BRAWLHALLA_FILES = {}
 BRAWLHALLA_LANG_FILES = {}   # {"language.1.bin": "/abs/path/language.1.bin"}
 BRAWLHALLA_VERSION = None
+
+
+def refresh_brawlhalla_file_index():
+    """Refresh replaceable binary assets after the worker has started.
+
+    Audio banks can be restored or added while the Loader is open, and a
+    custom game path may be selected after the module-level scan.  Refreshing
+    only the binary-file index keeps install/uninstall reliable without
+    reopening SWFs or recalculating the game version.
+    """
+    if BRAWLHALLA_PATH is None or not os.path.isdir(BRAWLHALLA_PATH):
+        return 0
+
+    found = 0
+    try:
+        for root, dirs, files in os.walk(BRAWLHALLA_PATH):
+            dirs[:] = [
+                directory for directory in dirs
+                if directory.casefold() not in {"mods", "backup"}
+            ]
+            for file_name in files:
+                file_lower = file_name.lower()
+                is_language_binary = file_lower.startswith("language.") and file_lower.endswith(".bin")
+                if not file_lower.endswith((".mp3", ".png", ".jpg", ".jpeg", ".bnk", ".wem")) and not is_language_binary:
+                    continue
+                BRAWLHALLA_FILES[file_name] = os.path.join(root, file_name)
+                found += 1
+
+        language_folder = os.path.join(BRAWLHALLA_PATH, "languages")
+        if os.path.isdir(language_folder):
+            for file_name in os.listdir(language_folder):
+                file_lower = file_name.lower()
+                if file_lower.startswith("language.") and file_lower.endswith(".bin"):
+                    BRAWLHALLA_LANG_FILES[file_name] = os.path.join(language_folder, file_name)
+    except OSError as error:
+        print(f"[Brawlhalla] Error refreshing binary file index: {error}")
+    return found
 
 
 if sys.platform in ["win32", "win64"]:
@@ -114,14 +151,26 @@ else:
 
 if BRAWLHALLA_PATH is not None and os.path.exists(BRAWLHALLA_PATH):
     try:
-        # Full recursive scan of Brawlhalla folder to find all SWF, image, and sound files
+        # Full recursive scan of Brawlhalla folder to find all SWF, binary
+        # assets, and Wwise banks/WEM files.  BNK/WEM entries are regular
+        # replaceable game files, so they must be indexed just like images and
+        # music instead of being reported as unknown source files.
         for root, dirs, files in os.walk(BRAWLHALLA_PATH):
+            # Never index files from the loader's own Mods/Backup folders as
+            # game originals.  This matters especially for BNK/WEM files,
+            # because installed sound mods can otherwise overwrite the real
+            # audio/pc target in BRAWLHALLA_FILES.
+            dirs[:] = [
+                directory for directory in dirs
+                if directory.casefold() not in {"mods", "backup"}
+            ]
             for f in files:
                 f_lower = f.lower()
                 full_p = os.path.join(root, f)
                 if f_lower.endswith(".swf"):
                     BRAWLHALLA_SWFS[f] = full_p
-                elif f_lower.endswith((".mp3", ".png", ".jpg")):
+                elif f_lower.endswith((".mp3", ".png", ".jpg", ".jpeg", ".bnk", ".wem")) or \
+                        (f_lower.startswith("language.") and f_lower.endswith(".bin")):
                     BRAWLHALLA_FILES[f] = full_p
     except Exception as e:
         print(f"[Brawlhalla] Error scanning directory: {e}")

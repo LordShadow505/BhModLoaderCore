@@ -75,7 +75,7 @@ class NotificationType(Enum):
     LoadingModIsEmpty = auto()
     LoadingModError = auto()
 
-    InstallingModNotFoundFileElement = auto()  # If not found file (jpg, mp3, png) in mod file
+    InstallingModNotFoundFileElement = auto()  # If a packaged asset (image, audio, BNK, or WEM) is missing
     InstallingModNotFoundGameSwf = auto()
 
     InstallingModSwfScriptError = auto()
